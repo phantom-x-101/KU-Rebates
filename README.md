@@ -24,9 +24,19 @@ Open http://localhost:3000 and pick a user in the header to change role.
 npm test
 ```
 
+## Vendor portal (Phase 7)
+
+Sign in as **Terry Terumo Rep** (`vendor_rep`). Open `/vendor`:
+
+- Own-vendor stock by location (never other vendors)
+- Usage by case date — case shown as date / room / procedure only
+- Expiry alerts (`expiring_soon` / `expired on shelf: rep pays`)
+
+Vendor filter is enforced in `src/lib/vendor-portal.ts`, not only the UI.
+
 ## Stock & reorder (Phase 6)
 
-- `/stock` — on-hand by product/location/lot/expiry with expiring-soon / expired flags; supply_chain can dispose expired lots (writes `expired` stock event)
+- `/stock` — on-hand by product/location/lot/expiry with expiring-soon / expired flags; supply_chain can dispose expired lots (writes `expired` stock event). `vendor_rep` is redirected to `/vendor`.
 - `/reorder` — par vs on-hand, low-stock suggestions only (no order button)
 
 ## Exceptions (Phase 5)

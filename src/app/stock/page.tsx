@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { StockTable } from "@/components/StockTable";
 import { listArrivalLocations } from "@/lib/arrival";
 import { canManageSettings, listVendors } from "@/lib/settings";
@@ -24,6 +25,10 @@ export default async function StockPage({
         Pick a user in the header to view stock.
       </p>
     );
+  }
+  // vendor_rep uses the portal only — never the full stock view
+  if (user.role === "vendor_rep") {
+    redirect("/vendor");
   }
 
   const sp = await searchParams;
