@@ -1,0 +1,38 @@
+---
+description: KU Rebate Management prototype: project context, hard constraints, conventions
+alwaysApply: true
+---
+
+# Project: KU Rebate Management prototype (Pycube)
+
+A prototype that runs alongside KU Medical Center's existing systems. Read `docs/ku-consignment-spec.md` for the workflow and `db/ku-schema.sql` for the data model before changing anything.
+
+## Hard constraints (never break these)
+
+1. NO patient identifiers anywhere: no MRN, name, DOB, encounter number, in any table, log, seed or UI. A "case" holds only department, room, procedure type and timestamps.
+2. NO write-back. Pycube never sends anything to Epic, GE or Workday. KU data arrives only as file imports. Do not add integration code for those systems.
+3. Build only what the current phase asks for. Container 1 (Consignment) is the first build. Container 2 (Consumption) is a thin close-out slice only. Container 3 (Contracts) is not built yet; its tables may exist but have no screens.
+4. Every state change writes a row to `audit_log` (who, when, container, entity, action).
+5. Every exception records `source_container` (1, 2 or 3).
+6. KU decides and places orders. Pycube only shows information, alerts and recommendations. Never build an "order" or "purchase" action.
+
+## Stack (change only if I say so)
+
+- Next.js (App Router) + TypeScript, SQLite via Drizzle ORM, Tailwind CSS
+- Zod for validation; Vitest for tests
+- Auth for the prototype: a simple user picker (no passwords), with roles: tech, supply_chain, category_owner, admin, vendor_rep
+
+## Conventions
+
+- All business logic lives in `src/lib/` as plain functions with unit tests, never inside route handlers or components.
+- Stock on hand is DERIVED from `stock_events`, never stored: on_hand = arrived + returned - pulled - expired.
+- Barcode parsing lives in one module, `src/lib/barcode.ts`. GS1 gives item, lot and expiry. HIBC gives the item only, so lot and expiry are entered manually in the prototype (photo reading is a later feature).
+- A vendor_rep user may only ever see rows for their own vendor. Enforce this in the data-access layer, not just the UI.
+- Dates are ISO strings. Quantities are integers for items.
+- Seed data lives in `db/seed.ts` and uses placeholders such as "Vendor X". Mark any invented number as a placeholder in the UI footer.
+- Small, reviewable commits: one phase per commit. Do not refactor unrelated code.
+
+## Definition of done for any phase
+
+- Types compile, tests pass, the screen works against seed data, and the audit_log shows the actions.
+- No patient fields. No write-back code. Nothing outside the phase's scope.
