@@ -18,7 +18,7 @@ export function Header({
             <Link href="/" className="text-lg font-semibold text-slate-900">
               KU Rebate
             </Link>
-            <p className="text-xs text-slate-500">Consignment prototype (Phase 4)</p>
+            <p className="text-xs text-slate-500">Consignment prototype (Phase 5)</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {currentUser &&
@@ -39,12 +39,20 @@ export function Header({
               </>
             ) : null}
             {canManageSettings(currentUser) ? (
-              <Link
-                href="/settings"
-                className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"
-              >
-                Settings
-              </Link>
+              <>
+                <Link
+                  href="/exceptions"
+                  className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"
+                >
+                  Exceptions
+                </Link>
+                <Link
+                  href="/settings"
+                  className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"
+                >
+                  Settings
+                </Link>
+              </>
             ) : null}
           </div>
         </div>
