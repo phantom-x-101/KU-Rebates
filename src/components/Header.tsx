@@ -18,10 +18,18 @@ export function Header({
             <Link href="/" className="text-lg font-semibold text-slate-900">
               KU Rebate
             </Link>
-            <p className="text-xs text-slate-500">Consignment prototype (Phase 6)</p>
+            <p className="text-xs text-slate-500">Consignment prototype (Phase 7)</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {currentUser ? (
+            {currentUser?.role === "vendor_rep" ? (
+              <Link
+                href="/vendor"
+                className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"
+              >
+                Vendor portal
+              </Link>
+            ) : null}
+            {currentUser && currentUser.role !== "vendor_rep" ? (
               <Link
                 href="/stock"
                 className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"

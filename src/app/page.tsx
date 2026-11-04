@@ -1,14 +1,41 @@
+import Link from "next/link";
 import { stockOnHand } from "@/lib/stock";
 import { getCurrentUser } from "@/lib/session";
+import {
+  canAccessVendorPortal,
+  listVendorStock,
+  requireVendorRepScope,
+} from "@/lib/vendor-portal";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
-  let rows: Awaited<ReturnType<typeof stockOnHand>> = [];
+  let rows: {
+    productId: number;
+    locationId: number | null;
+    lot: string | null;
+    expiry: string | null;
+    onHand: number;
+  }[] = [];
   let error: string | null = null;
+  let vendorScoped = false;
+
   try {
-    rows = await stockOnHand();
+    if (user && canAccessVendorPortal(user)) {
+      const { vendorId } = requireVendorRepScope(user);
+      const stock = await listVendorStock(vendorId);
+      vendorScoped = true;
+      rows = stock.map((r) => ({
+        productId: r.productId,
+        locationId: r.locationId,
+        lot: r.lot,
+        expiry: r.expiry,
+        onHand: r.onHand,
+      }));
+    } else {
+      rows = await stockOnHand();
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : "Database not ready";
   }
@@ -18,12 +45,23 @@ export default async function HomePage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Phase 6 adds stock on hand with expiry flags and a reorder suggestion
-          view (no order button). Open Stock or Reorder.
+          Phase 7 adds the vendor_rep portal: own-vendor stock by location,
+          usage by case date, and expiry alerts.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
-            Signed in as <strong>{user.name}</strong> with role <strong>{user.role}</strong>.
+            Signed in as <strong>{user.name}</strong> with role{" "}
+            <strong>{user.role}</strong>.
+            {canAccessVendorPortal(user) ? (
+              <>
+                {" "}
+                Open the{" "}
+                <Link href="/vendor" className="underline">
+                  vendor portal
+                </Link>
+                .
+              </>
+            ) : null}
           </p>
         ) : (
           <p className="mt-3 text-sm text-amber-800">
@@ -34,7 +72,10 @@ export default async function HomePage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-medium">Stock on hand (derived)</h2>
+        <h2 className="text-lg font-medium">
+          Stock on hand (derived)
+          {vendorScoped ? " — your vendor only" : ""}
+        </h2>
         <p className="text-sm text-slate-600">
           arrived + returned − pulled − expired from <code>stock_events</code>.
         </p>
