@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { ExceptionQueue } from "@/components/ExceptionQueue";
 import {
-  EXCEPTION_QUEUE_ROLES,
+  canAccessExceptionQueue,
   listAssignableOwners,
   listExceptions,
 } from "@/lib/exceptions";
@@ -16,12 +16,7 @@ export default async function ExceptionsPage({
   searchParams: Promise<{ type?: string; container?: string; status?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (
-    !user ||
-    !EXCEPTION_QUEUE_ROLES.includes(
-      user.role as (typeof EXCEPTION_QUEUE_ROLES)[number],
-    )
-  ) {
+  if (!canAccessExceptionQueue(user)) {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Exception queue</h1>

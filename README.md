@@ -24,6 +24,11 @@ Open http://localhost:3000 and pick a user in the header to change role.
 npm test
 ```
 
+## Stock & reorder (Phase 6)
+
+- `/stock` — on-hand by product/location/lot/expiry with expiring-soon / expired flags; supply_chain can dispose expired lots (writes `expired` stock event)
+- `/reorder` — par vs on-hand, low-stock suggestions only (no order button)
+
 ## Exceptions (Phase 5)
 
 Sign in as **supply_chain** or **admin**, open `/exceptions`. Filter by type/container, assign an owner, resolve with a note. Closing a case (or the timeout check) creates `taken_not_scanned_or_returned` gaps with `source_container = 1`.

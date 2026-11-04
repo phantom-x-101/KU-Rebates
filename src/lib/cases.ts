@@ -186,7 +186,7 @@ export async function closeCase(
     db,
   );
 
-  // Phase 5: any gap → taken_not_scanned_or_returned (source_container = 1)
+  // Phase 5: gap → taken_not_scanned_or_returned; surplus → closeout_exceeds_taken
   const { createGapExceptions } = await import("@/lib/reconcile");
   await createGapExceptions(caseId, userId, db);
 

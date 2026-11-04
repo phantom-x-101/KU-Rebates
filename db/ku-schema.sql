@@ -270,7 +270,8 @@ CREATE TABLE exceptions (
   source_container INTEGER NOT NULL CHECK (source_container IN (1,2,3)),
   type             TEXT NOT NULL CHECK (type IN (
                      'not_on_any_contract','bill_only_unmapped','missing_from_item_master',
-                     'opened_or_wasted','taken_not_scanned_or_returned','expired_on_shelf')),
+                     'opened_or_wasted','taken_not_scanned_or_returned','expired_on_shelf',
+                     'closeout_exceeds_taken')),
   scan_id          INTEGER REFERENCES scans(id),
   product_id       INTEGER REFERENCES products(id),
   contract_line_id INTEGER REFERENCES contract_lines(id),

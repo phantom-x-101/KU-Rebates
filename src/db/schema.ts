@@ -484,7 +484,8 @@ export const exceptions = sqliteTable(
       "exceptions_type_check",
       sql`${t.type} IN (
         'not_on_any_contract','bill_only_unmapped','missing_from_item_master',
-        'opened_or_wasted','taken_not_scanned_or_returned','expired_on_shelf')`,
+        'opened_or_wasted','taken_not_scanned_or_returned','expired_on_shelf',
+        'closeout_exceeds_taken')`,
     ),
     check(
       "exceptions_status_check",

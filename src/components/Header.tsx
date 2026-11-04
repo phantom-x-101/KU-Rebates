@@ -18,9 +18,17 @@ export function Header({
             <Link href="/" className="text-lg font-semibold text-slate-900">
               KU Rebate
             </Link>
-            <p className="text-xs text-slate-500">Consignment prototype (Phase 5)</p>
+            <p className="text-xs text-slate-500">Consignment prototype (Phase 6)</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {currentUser ? (
+              <Link
+                href="/stock"
+                className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"
+              >
+                Stock
+              </Link>
+            ) : null}
             {currentUser &&
             ["tech", "supply_chain", "admin"].includes(currentUser.role) ? (
               <>
@@ -40,6 +48,12 @@ export function Header({
             ) : null}
             {canManageSettings(currentUser) ? (
               <>
+                <Link
+                  href="/reorder"
+                  className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"
+                >
+                  Reorder
+                </Link>
                 <Link
                   href="/exceptions"
                   className="rounded border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-800 hover:bg-slate-100"

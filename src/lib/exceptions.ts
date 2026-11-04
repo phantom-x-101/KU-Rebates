@@ -6,6 +6,24 @@ import { audit } from "@/lib/audit";
 
 export const EXCEPTION_QUEUE_ROLES = ["supply_chain", "admin"] as const;
 
+export function canAccessExceptionQueue(
+  user: { role: string; active?: number | boolean | null } | null | undefined,
+): boolean {
+  if (!user || user.active === 0 || user.active === false) return false;
+  return EXCEPTION_QUEUE_ROLES.includes(
+    user.role as (typeof EXCEPTION_QUEUE_ROLES)[number],
+  );
+}
+
+export function assertCanAccessExceptionQueue(
+  user: { role: string; active?: number | boolean | null } | null | undefined,
+) {
+  if (!canAccessExceptionQueue(user)) {
+    throw new Error("Exception queue requires supply_chain or admin");
+  }
+  return user!;
+}
+
 export const exceptionTypeSchema = z.enum([
   "not_on_any_contract",
   "bill_only_unmapped",
@@ -13,6 +31,7 @@ export const exceptionTypeSchema = z.enum([
   "opened_or_wasted",
   "taken_not_scanned_or_returned",
   "expired_on_shelf",
+  "closeout_exceeds_taken",
 ]);
 
 export async function listExceptions(

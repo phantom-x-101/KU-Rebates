@@ -18,8 +18,8 @@ export default async function HomePage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Phase 5 adds reconciliation (taken = used + wasted + returned) and the
-          exception queue. Pick supply_chain, then open Exceptions.
+          Phase 6 adds stock on hand with expiry flags and a reorder suggestion
+          view (no order button). Open Stock or Reorder.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
