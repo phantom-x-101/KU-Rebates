@@ -140,6 +140,7 @@ export function ExceptionQueue({
             <option value="taken_not_scanned_or_returned">
               taken_not_scanned_or_returned
             </option>
+            <option value="closeout_exceeds_taken">closeout_exceeds_taken</option>
             <option value="opened_or_wasted">opened_or_wasted</option>
             <option value="expired_on_shelf">expired_on_shelf</option>
             <option value="not_on_any_contract">not_on_any_contract</option>

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
-  EXCEPTION_QUEUE_ROLES,
+  assertCanAccessExceptionQueue,
   assignExceptionOwner,
   resolveException,
 } from "@/lib/exceptions";
@@ -13,16 +13,8 @@ export type ExceptionActionState = { ok: boolean; message: string };
 
 async function requireQueueUser() {
   const user = await getCurrentUser();
-  if (
-    !user ||
-    !user.active ||
-    !EXCEPTION_QUEUE_ROLES.includes(
-      user.role as (typeof EXCEPTION_QUEUE_ROLES)[number],
-    )
-  ) {
-    throw new Error("Exception queue requires supply_chain or admin");
-  }
-  return user;
+  assertCanAccessExceptionQueue(user);
+  return user!;
 }
 
 function str(formData: FormData, key: string) {
