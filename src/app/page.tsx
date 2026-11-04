@@ -18,8 +18,8 @@ export default async function HomePage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Phase 3 adds scan on arrival. Pick a tech, supply_chain, or admin user, then
-          open Scan arrival. Settings remain available to admin and supply_chain.
+          Phase 4 adds cases: open a case, scan pulls, then close out used / wasted /
+          returned (or abort). Pick a tech user, then open Cases.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
