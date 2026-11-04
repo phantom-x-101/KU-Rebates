@@ -24,6 +24,10 @@ Open http://localhost:3000 and pick a user in the header to change role.
 npm test
 ```
 
+## Settings (Phase 2)
+
+Sign in as **admin** or **supply_chain**, then open `/settings` to manage vendors, products (GTIN/HIBC/catalog), storage locations, product access (mode + par), and expiry rules.
+
 ## Phase 1
 
 Scaffold + Drizzle/SQLite schema, `stockOnHand`, seed, user picker, `audit()` helper.
