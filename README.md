@@ -24,6 +24,14 @@ Open http://localhost:3000 and pick a user in the header to change role.
 npm test
 ```
 
+## Cases (Phase 4)
+
+Sign in as **tech** (or supply_chain / admin), open `/cases`:
+
+1. Open a case (department / room / procedure — no patient data)
+2. Scan items as pulled
+3. Close out each line as used, wasted, or returned; or abort the case
+
 ## Scan on arrival (Phase 3)
 
 Sign in as **tech**, **supply_chain**, or **admin**, then open `/scan/arrival`.
