@@ -16,10 +16,10 @@ export default async function HomePage() {
   return (
     <div className="space-y-6">
       <section>
-        <h1 className="text-2xl font-semibold tracking-tight">Phase 1 scaffold</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Database, seed data, stock-on-hand helper, audit log, and a simple user picker.
-          Pick a user in the header to change the active role.
+          Phase 2 adds settings for vendors, products, locations, product access, and
+          expiry rules. Pick an admin or supply_chain user, then open Settings.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
