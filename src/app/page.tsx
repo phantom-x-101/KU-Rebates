@@ -18,8 +18,8 @@ export default async function HomePage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Phase 2 adds settings for vendors, products, locations, product access, and
-          expiry rules. Pick an admin or supply_chain user, then open Settings.
+          Phase 3 adds scan on arrival. Pick a tech, supply_chain, or admin user, then
+          open Scan arrival. Settings remain available to admin and supply_chain.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
