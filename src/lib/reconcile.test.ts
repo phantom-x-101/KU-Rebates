@@ -9,7 +9,6 @@ import { closeCase, openCase } from "@/lib/cases";
 import { closeoutReturned, closeoutUsed } from "@/lib/closeout";
 import { recordPull } from "@/lib/pull";
 import {
-  createGapExceptions,
   reconcileCase,
   reconcileTimedOutOpenCases,
   summarizeFromCounts,
