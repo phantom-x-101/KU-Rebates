@@ -1,6 +1,9 @@
 import { SettingsForm } from "@/components/SettingsForm";
 import { SettingsNav } from "@/components/SettingsNav";
-import { createProductAction } from "@/app/settings/actions";
+import {
+  createProductAction,
+  updateProductAction,
+} from "@/app/settings/actions";
 import { listProducts, listVendors } from "@/lib/settings";
 
 export default async function ProductsSettingsPage() {
@@ -10,75 +13,120 @@ export default async function ProductsSettingsPage() {
     <>
       <SettingsNav current="/settings/products" />
       <div className="grid gap-8 lg:grid-cols-2">
-        <section className="space-y-3">
-          <h2 className="text-lg font-medium">Add product</h2>
-          <SettingsForm action={createProductAction} submitLabel="Add product">
-            <label className="block text-sm">
-              <span className="text-slate-600">Vendor</span>
-              <select
-                name="vendorId"
-                required
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Select vendor
-                </option>
-                {vendorRows.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
+        <div className="space-y-8">
+          <section className="space-y-3">
+            <h2 className="text-lg font-medium">Add product</h2>
+            <SettingsForm action={createProductAction} submitLabel="Add product">
+              <label className="block text-sm">
+                <span className="text-slate-600">Vendor</span>
+                <select
+                  name="vendorId"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Select vendor
                   </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-600">Catalog number</span>
-              <input
-                name="catalogNumber"
-                required
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-600">Description</span>
-              <input
-                name="description"
-                required
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-600">Category (optional)</span>
-              <input
-                name="category"
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-600">GTIN (optional)</span>
-              <input
-                name="gtin"
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-xs"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-600">HIBC (optional)</span>
-              <input
-                name="hibc"
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-xs"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-600">
-                Catalog identifier (optional; defaults to catalog number)
-              </span>
-              <input
-                name="catalogIdentifier"
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-xs"
-              />
-            </label>
-          </SettingsForm>
-        </section>
+                  {vendorRows.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">Catalog number</span>
+                <input
+                  name="catalogNumber"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">Description</span>
+                <input
+                  name="description"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">Category (optional)</span>
+                <input
+                  name="category"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">GTIN (optional)</span>
+                <input
+                  name="gtin"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-xs"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">HIBC (optional)</span>
+                <input
+                  name="hibc"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-xs"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">
+                  Catalog identifier (optional; defaults to catalog number)
+                </span>
+                <input
+                  name="catalogIdentifier"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-xs"
+                />
+              </label>
+            </SettingsForm>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-lg font-medium">Edit product</h2>
+            <SettingsForm
+              action={updateProductAction}
+              submitLabel="Save product changes"
+            >
+              <label className="block text-sm">
+                <span className="text-slate-600">Product</span>
+                <select
+                  name="id"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Select product
+                  </option>
+                  {rows.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.vendorName} — {p.catalogNumber}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">Description</span>
+                <input
+                  name="description"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">Category (optional)</span>
+                <input
+                  name="category"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+              </label>
+            </SettingsForm>
+          </section>
+        </div>
+
         <section>
           <h2 className="text-lg font-medium">Products</h2>
           <div className="mt-3 overflow-x-auto">

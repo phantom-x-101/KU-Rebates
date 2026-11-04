@@ -7,6 +7,7 @@ const links = [
   { href: "/settings/locations", label: "Locations" },
   { href: "/settings/product-access", label: "Product access" },
   { href: "/settings/expiry-rules", label: "Expiry rules" },
+  { href: "/settings/audit", label: "Audit log" },
 ];
 
 export function SettingsNav({ current }: { current: string }) {

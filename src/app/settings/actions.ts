@@ -8,6 +8,7 @@ import {
   createProduct,
   createStorageLocation,
   createVendor,
+  updateProduct,
   upsertProductAccess,
 } from "@/lib/settings";
 
@@ -41,6 +42,7 @@ export async function createVendorAction(
     );
     revalidatePath("/settings");
     revalidatePath("/settings/vendors");
+    revalidatePath("/settings/audit");
     return { ok: true, message: `Vendor created: ${row.name}` };
   } catch (e) {
     return {
@@ -71,6 +73,7 @@ export async function createProductAction(
     revalidatePath("/settings");
     revalidatePath("/settings/products");
     revalidatePath("/settings/product-access");
+    revalidatePath("/settings/audit");
     return {
       ok: true,
       message: `Product created: ${row.catalogNumber} (id ${row.id})`,
@@ -79,6 +82,35 @@ export async function createProductAction(
     return {
       ok: false,
       message: e instanceof Error ? e.message : "Failed to create product",
+    };
+  }
+}
+
+export async function updateProductAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    const user = await requireSettingsUser();
+    const row = await updateProduct(
+      {
+        id: formString(formData, "id"),
+        description: formString(formData, "description"),
+        category: formString(formData, "category") || undefined,
+      },
+      user.id,
+    );
+    revalidatePath("/settings");
+    revalidatePath("/settings/products");
+    revalidatePath("/settings/audit");
+    return {
+      ok: true,
+      message: `Product updated: ${row.catalogNumber} — ${row.description}`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : "Failed to update product",
     };
   }
 }
@@ -99,6 +131,7 @@ export async function createLocationAction(
     );
     revalidatePath("/settings");
     revalidatePath("/settings/locations");
+    revalidatePath("/settings/audit");
     return { ok: true, message: `Location created: ${row.name}` };
   } catch (e) {
     return {
@@ -127,6 +160,7 @@ export async function upsertProductAccessAction(
     revalidatePath("/settings");
     revalidatePath("/settings/product-access");
     revalidatePath("/settings/products");
+    revalidatePath("/settings/audit");
     return {
       ok: true,
       message: `Access saved for product ${data.productId}: ${data.accessMode}, par ${data.parLevel ?? "—"}`,
@@ -155,6 +189,7 @@ export async function createExpiryRuleAction(
     );
     revalidatePath("/settings");
     revalidatePath("/settings/expiry-rules");
+    revalidatePath("/settings/audit");
     return {
       ok: true,
       message: `Expiry rule created (id ${row.id}, ${row.daysBefore} days)`,

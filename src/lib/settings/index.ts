@@ -8,7 +8,7 @@ export {
   upsertProductAccessSchema,
 } from "./schemas";
 export { createVendor, listVendors } from "./vendors";
-export { createProduct, listProducts } from "./products";
+export { createProduct, listProducts, updateProduct } from "./products";
 export {
   createStorageLocation,
   listDepartments,
@@ -16,3 +16,4 @@ export {
 } from "./locations";
 export { listProductAccess, upsertProductAccess } from "./product-access";
 export { createExpiryRule, listExpiryRules } from "./expiry-rules";
+export { listRecentAudit } from "./audit-list";
