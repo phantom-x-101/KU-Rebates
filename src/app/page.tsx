@@ -18,8 +18,8 @@ export default async function HomePage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Phase 4 adds cases: open a case, scan pulls, then close out used / wasted /
-          returned (or abort). Pick a tech user, then open Cases.
+          Phase 5 adds reconciliation (taken = used + wasted + returned) and the
+          exception queue. Pick supply_chain, then open Exceptions.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">

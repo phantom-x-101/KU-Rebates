@@ -24,6 +24,10 @@ Open http://localhost:3000 and pick a user in the header to change role.
 npm test
 ```
 
+## Exceptions (Phase 5)
+
+Sign in as **supply_chain** or **admin**, open `/exceptions`. Filter by type/container, assign an owner, resolve with a note. Closing a case (or the timeout check) creates `taken_not_scanned_or_returned` gaps with `source_container = 1`.
+
 ## Cases (Phase 4)
 
 Sign in as **tech** (or supply_chain / admin), open `/cases`:

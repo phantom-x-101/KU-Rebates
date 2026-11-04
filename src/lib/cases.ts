@@ -185,6 +185,11 @@ export async function closeCase(
     },
     db,
   );
+
+  // Phase 5: any gap → taken_not_scanned_or_returned (source_container = 1)
+  const { createGapExceptions } = await import("@/lib/reconcile");
+  await createGapExceptions(caseId, userId, db);
+
   return row;
 }
 

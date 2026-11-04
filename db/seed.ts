@@ -218,6 +218,7 @@ async function main() {
     { key: "workday_integration", value: "off" },
     { key: "default_count_basis", value: "used" },
     { key: "default_forecast_method", value: "run_rate" },
+    { key: "case_closeout_timeout_hours", value: "24" },
   ]);
 
   // --- Stock arrivals (on hand before the case) ---
