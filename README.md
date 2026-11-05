@@ -1,68 +1,46 @@
 # KU Rebate Management (prototype)
 
-Pycube consignment prototype that runs alongside KU Medical Center workflows. Demo data only.
+Pycube consignment prototype alongside KU Medical Center workflows. **Demo data only.**
 
-## Hard constraints
+Hard constraints: no patient identifiers; no write-back to Epic, GE, or Workday; stock on hand is derived from `stock_events`.
 
-- No patient identifiers (no MRN, name, DOB, encounter)
-- No write-back to Epic, GE, or Workday
-- Stock on hand is derived from `stock_events` (never stored)
-
-## Setup
+## Run the full demo (&lt; 5 minutes)
 
 ```bash
 npm install
-npm run db:seed
-npm run dev
+npm run db:seed    # resets SQLite to a clean demo state
+npm run dev        # http://localhost:3000
 ```
 
-Open http://localhost:3000 and pick a user in the header to change role.
-
-## Tests
+1. Pick **Sam Supply** (`supply_chain`) in the header.
+2. Open **Dashboard** — taken today, open exceptions, expiring ≤30 days, low stock.
+3. Walk Stock, Cases, Exceptions, Reorder, Settings as needed.
+4. Pick **Terry Terumo Rep** for the vendor portal (`/vendor`).
 
 ```bash
-npm test
+npm test           # unit tests (Vitest)
 ```
 
-## Vendor portal (Phase 7)
+Re-seed anytime with `npm run db:seed` (deletes `data/ku.sqlite` and rebuilds).
 
-Sign in as **Terry Terumo Rep** (`vendor_rep`). Open `/vendor`:
+Footer on every page: *Demo data. Vendor X and Vendor C are placeholders.*
 
-- Own-vendor stock by location (never other vendors)
-- Usage by case date — case shown as date / room / procedure only
-- Expiry alerts (`expiring_soon` / `expired on shelf: rep pays`)
+## Phase map
 
-Vendor filter is enforced in `src/lib/vendor-portal.ts`, not only the UI.
+| Phase | What |
+|-------|------|
+| 1 | Scaffold, Drizzle/SQLite, seed, user picker, `audit()` |
+| 2 | Settings (vendors, products, locations, access, expiry rules) |
+| 3 | Scan on arrival + barcode parser (GS1 / HIBC) |
+| 4 | Cases, pull scans, close-out (used / wasted / returned) |
+| 5 | Reconcile check + exception queue |
+| 6 | Stock view, expiry flags, reorder suggestions (no order button) |
+| 7 | Vendor portal (own vendor only) |
+| 8 | Supply-chain dashboard, clean seed reset, demo footer + README |
 
-## Stock & reorder (Phase 6)
+## Useful routes
 
-- `/stock` — on-hand by product/location/lot/expiry with expiring-soon / expired flags; supply_chain can dispose expired lots (writes `expired` stock event). `vendor_rep` is redirected to `/vendor`.
-- `/reorder` — par vs on-hand, low-stock suggestions only (no order button)
-
-## Exceptions (Phase 5)
-
-Sign in as **supply_chain** or **admin**, open `/exceptions`. Filter by type/container, assign an owner, resolve with a note. Closing a case (or the timeout check) creates `taken_not_scanned_or_returned` gaps with `source_container = 1`.
-
-## Cases (Phase 4)
-
-Sign in as **tech** (or supply_chain / admin), open `/cases`:
-
-1. Open a case (department / room / procedure — no patient data)
-2. Scan items as pulled
-3. Close out each line as used, wasted, or returned; or abort the case
-
-## Scan on arrival (Phase 3)
-
-Sign in as **tech**, **supply_chain**, or **admin**, then open `/scan/arrival`.
-
-- Terumo GS1 sample fills lot `0001681425` and expiry `2028-11-01`
-- Cardiva HIBC sample is item-only — enter lot/expiry manually
-- Unknown barcodes show an error with a link to add the product (settings roles)
-
-## Settings (Phase 2)
-
-Sign in as **admin** or **supply_chain**, then open `/settings` to manage vendors, products (GTIN/HIBC/catalog), storage locations, product access (mode + par), and expiry rules.
-
-## Phase 1
-
-Scaffold + Drizzle/SQLite schema, `stockOnHand`, seed, user picker, `audit()` helper.
+- `/dashboard` — supply_chain / admin snapshot
+- `/stock`, `/reorder`, `/exceptions`, `/settings`
+- `/cases`, `/scan/arrival`
+- `/vendor` — vendor_rep only

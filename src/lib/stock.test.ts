@@ -53,7 +53,7 @@ describe("stockOnHand", () => {
     expect(byKey["2|G612C260420B"]).toBe(1);
     // Ablation: arrived 2 - pulled 1 = 1
     expect(byKey["3|VCABL1001"]).toBe(1);
-    // Mapping: arrived 3 - pulled 2 + returned 1 = 2
-    expect(byKey["4|VCMAP2001"]).toBe(2);
+    // Mapping: arrived 3 - pulled 3 + returned 1 = 1 (incl. today's dashboard pull)
+    expect(byKey["4|VCMAP2001"]).toBe(1);
   });
 });
