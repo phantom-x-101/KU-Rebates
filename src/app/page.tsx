@@ -45,13 +45,23 @@ export default async function HomePage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Phase 7 adds the vendor_rep portal: own-vendor stock by location,
-          usage by case date, and expiry alerts.
+          Phase 8 adds the supply-chain dashboard (taken today, open exceptions,
+          expiring soon, low stock). Seed resets a clean demo; see the README.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
             Signed in as <strong>{user.name}</strong> with role{" "}
             <strong>{user.role}</strong>.
+            {["supply_chain", "admin"].includes(user.role) ? (
+              <>
+                {" "}
+                Open the{" "}
+                <Link href="/dashboard" className="underline">
+                  dashboard
+                </Link>
+                .
+              </>
+            ) : null}
             {canAccessVendorPortal(user) ? (
               <>
                 {" "}

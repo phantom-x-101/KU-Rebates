@@ -1,6 +1,7 @@
 /**
  * Demo seed for the KU Rebate consignment prototype.
- * Placeholders: Vendor C and invented quantities are marked as such.
+ * Always resets to a clean demo state (deletes the SQLite file first).
+ * Placeholders: Vendor X / Vendor C and invented quantities are marked as such.
  * No patient identifiers. No write-back to Epic/GE/Workday.
  */
 import fs from "node:fs";
@@ -42,6 +43,7 @@ async function pushSchema() {
 }
 
 async function main() {
+  console.log(`Resetting clean demo state → ${dbPath}`);
   resetFile();
   // Clear any hot-reload singleton before push/seed
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -470,13 +472,45 @@ async function main() {
     detail: "Seeded gap: extra sheath pulled without close-out",
   }, db);
 
-  console.log(`Seeded ${dbPath}`);
+  // --- Today's open case (dashboard: items taken today) ---
+  const todayIso = new Date().toISOString().slice(0, 10);
+  await db.insert(cases).values({
+    id: 2,
+    departmentId: 1,
+    roomId: 1,
+    procedureTypeId: 1,
+    openedAt: `${todayIso}T09:00:00`,
+    openedBy: 1,
+    status: "open",
+  });
+  await db.insert(stockEvents).values({
+    eventType: "pulled",
+    productId: 4,
+    locationId: 1,
+    caseId: 2,
+    lot: "VCMAP2001",
+    expiry: "2027-08-15",
+    qty: 1,
+    byUserId: 1,
+    at: `${todayIso}T09:15:00`,
+  });
+  await audit({
+    userId: 1,
+    container: 2,
+    entity: "cases",
+    entityId: 2,
+    action: "seed_open",
+    detail: `Open EP case for dashboard taken-today (${todayIso})`,
+  }, db);
+
+  console.log(`Seed complete (clean demo): ${dbPath}`);
   console.log("Expected stockOnHand highlights:");
   console.log("  Terumo RSS802 lot 0001681425: arrived 3 - pulled 2 = 1");
   console.log(`  Terumo RSS802 lot EXPIRINGSOON1: arrived 1 = 1 (expires ${soonExpiryIso})`);
   console.log("  Cardiva 800-612C: arrived 2 - pulled 1 = 1");
   console.log("  Vendor C ablation: arrived 2 - pulled 1 = 1");
-  console.log("  Vendor C mapping: arrived 3 - pulled 2 + returned 1 = 2");
+  console.log("  Vendor C mapping: arrived 3 - pulled 3 + returned 1 = 1 (incl. today)");
+  console.log(`Dashboard: taken today on case 2 (${todayIso}); open gap exception; EXPIRINGSOON1; low stock vs par`);
 }
 
 main().catch((err) => {

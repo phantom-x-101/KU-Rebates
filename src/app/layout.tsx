@@ -34,8 +34,7 @@ export default async function RootLayout({
         <Header users={users} currentUser={currentUser} />
         <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
         <footer className="mx-auto max-w-5xl px-4 pb-8 text-xs text-slate-500">
-          Demo data. Vendor C is a placeholder. No patient identifiers. No write-back to Epic,
-          GE or Workday.
+          Demo data. Vendor X and Vendor C are placeholders.
         </footer>
       </body>
     </html>
