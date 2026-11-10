@@ -22,6 +22,12 @@ export function Header({
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
+              href="/demo"
+              className="rounded border border-slate-900 bg-white px-2.5 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+            >
+              Run the demo
+            </Link>
+            <Link
               href="/station"
               className="rounded bg-slate-900 px-2.5 py-1 text-sm font-semibold text-white hover:bg-slate-700"
             >

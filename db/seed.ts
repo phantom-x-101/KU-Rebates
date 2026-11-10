@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createDb } from "../src/db";
+import { createDb, type AppDb } from "../src/db";
 import { audit } from "../src/lib/audit";
 import {
   appSettings,
@@ -42,19 +42,8 @@ async function pushSchema() {
   });
 }
 
-async function main() {
-  console.log(`Resetting clean demo state → ${dbPath}`);
-  resetFile();
-  // Clear any hot-reload singleton before push/seed
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).__kuDb = undefined;
-
-  await pushSchema();
-
-  const { db } = createDb(dbPath);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).__kuDb = { db, sqlite: undefined };
-
+/** Insert the clean demo rows. Does not delete the database file. */
+export async function seedDemo(db: AppDb) {
   // --- Vendors ---
   await db.insert(vendors).values([
     { id: 1, name: "Terumo" },
@@ -516,6 +505,20 @@ async function main() {
     detail: `Open EP case for dashboard taken-today (${todayIso})`,
   }, db);
 
+  return { soonExpiryIso, todayIso };
+}
+
+async function main() {
+  console.log(`Resetting clean demo state → ${dbPath}`);
+  resetFile();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__kuDb = undefined;
+  await pushSchema();
+  const { db, sqlite } = createDb(dbPath);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__kuDb = { db, sqlite };
+  const { soonExpiryIso, todayIso } = await seedDemo(db);
+  sqlite.close();
   console.log(`Seed complete (clean demo): ${dbPath}`);
   console.log("Expected stockOnHand highlights:");
   console.log("  Terumo RSS802 lot 0001681425: arrived 3 - pulled 2 = 1");
@@ -527,7 +530,10 @@ async function main() {
   console.log(`Dashboard: taken today on case 2 (${todayIso}); open gap exception; EXPIRINGSOON1; low stock vs par`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const entry = (process.argv[1] ?? "").replace(/\\/g, "/");
+if (entry.endsWith("db/seed.ts") || entry.endsWith("db/seed.js")) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

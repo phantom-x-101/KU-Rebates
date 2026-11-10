@@ -49,6 +49,30 @@ const MODES: { id: StationMode; label: string }[] = [
 
 const MODE_KEY = "ku-station-mode";
 
+function playTone(ok: boolean) {
+  try {
+    const ctx = new window.AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = ok ? "sine" : "square";
+    osc.frequency.value = ok ? 880 : 180;
+    gain.gain.setValueAtTime(0.07, ctx.currentTime);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    const stopAt = ctx.currentTime + (ok ? 0.12 : 0.28);
+    osc.stop(stopAt);
+    osc.onended = () => void ctx.close();
+  } catch {
+    // Audio can be blocked until a click. Scanning is that click.
+  }
+}
+
+function cue(outcome: StationOutcome) {
+  if (outcome.status === "success") playTone(true);
+  else if (outcome.status === "error" || outcome.status === "unknown") playTone(false);
+}
+
 export function ScanStation({
   caseRow,
   reconciliation,
@@ -124,6 +148,7 @@ export function ScanStation({
         expiry: extra?.expiry,
       });
       setResult(outcome);
+      cue(outcome);
       if (scanRef.current) scanRef.current.value = "";
       setSim("");
       router.refresh();
@@ -373,6 +398,7 @@ export function ScanStation({
                     expiry: String(data.get("expiry") ?? ""),
                   });
                   setResult(outcome);
+                  cue(outcome);
                   router.refresh();
                 } finally {
                   busy.current = false;
@@ -550,16 +576,16 @@ function ResultCard({ result }: { result: StationOutcome | null }) {
   if (!result || result.status === "needs_lot") return null;
   if (result.status === "unknown") {
     return (
-      <div className="rounded-xl bg-red-700 px-5 py-5 text-white" aria-live="polite">
-        <p className="text-3xl font-bold">Unknown barcode</p>
+      <div className="rounded-xl bg-red-700 px-5 py-6 text-white shadow-lg" aria-live="polite">
+        <p className="text-4xl font-bold">Unknown barcode</p>
         <p className="mt-1 font-mono text-lg">{result.raw}</p>
       </div>
     );
   }
   if (result.status === "error") {
     return (
-      <div className="rounded-xl bg-red-700 px-5 py-5 text-white" aria-live="polite">
-        <p className="text-3xl font-bold">{result.message}</p>
+      <div className="rounded-xl bg-red-700 px-5 py-6 text-white shadow-lg" aria-live="polite">
+        <p className="text-4xl font-bold">{result.message}</p>
         {result.item ? (
           <p className="mt-2 text-lg">
             {result.item.vendorName} · {result.item.description}
@@ -571,8 +597,8 @@ function ResultCard({ result }: { result: StationOutcome | null }) {
     );
   }
   return (
-    <div className="rounded-xl bg-emerald-700 px-5 py-5 text-white" aria-live="polite">
-      <p className="text-3xl font-bold">{result.headline}</p>
+    <div className="rounded-xl bg-emerald-700 px-5 py-6 text-white shadow-lg" aria-live="polite">
+      <p className="text-4xl font-bold">{result.headline}</p>
       <p className="mt-2 text-xl">{result.item.description}</p>
       <p className="text-lg">
         {result.item.vendorName} · {result.item.catalogNumber}
