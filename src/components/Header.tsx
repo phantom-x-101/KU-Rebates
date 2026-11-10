@@ -12,15 +12,27 @@ export function Header({
 }) {
   return (
     <header className="border-b border-slate-200 bg-slate-50">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-4">
           <div>
             <Link href="/" className="text-lg font-semibold text-slate-900">
               KU Rebate
             </Link>
-            <p className="text-xs text-slate-500">Consignment prototype (Phase 8)</p>
+            <p className="text-xs text-slate-500">Consignment prototype</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/demo"
+              className="rounded border border-slate-900 bg-white px-2.5 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+            >
+              Run the demo
+            </Link>
+            <Link
+              href="/station"
+              className="rounded bg-slate-900 px-2.5 py-1 text-sm font-semibold text-white hover:bg-slate-700"
+            >
+              Scan station
+            </Link>
             {currentUser?.role === "vendor_rep" ? (
               <Link
                 href="/vendor"

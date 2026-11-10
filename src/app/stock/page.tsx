@@ -5,7 +5,12 @@ import { StockTable } from "@/components/StockTable";
 import { listArrivalLocations } from "@/lib/arrival";
 import { canManageSettings, listVendors } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/session";
-import { listStockView, type StockFlag } from "@/lib/stock-view";
+import { listReorderView } from "@/lib/reorder";
+import {
+  ensureExpiredOnShelfExceptions,
+  listStockView,
+  type StockFlag,
+} from "@/lib/stock-view";
 
 export const dynamic = "force-dynamic";
 
@@ -34,20 +39,39 @@ export default async function StockPage({
   const sp = await searchParams;
   const locationId = sp.locationId ?? "";
   const vendorId = sp.vendorId ?? "";
-  const flag = (sp.flag ?? "all") as StockFlag | "all";
+  const flag = (sp.flag ?? "all") as StockFlag | "all" | "below_par";
 
-  const [rows, locations, vendors] = await Promise.all([
+  if (canManageSettings(user)) {
+    await ensureExpiredOnShelfExceptions(user.id);
+  }
+
+  const [stockRows, locations, vendors, reorder] = await Promise.all([
     listStockView({
       locationId: locationId ? Number(locationId) : undefined,
       vendorId: vendorId ? Number(vendorId) : undefined,
-      flag,
+      flag: flag === "below_par" ? "all" : flag,
     }),
     listArrivalLocations(),
     listVendors(),
+    listReorderView(),
   ]);
 
-  const expiring = rows.filter((r) => r.flag === "expiring_soon").length;
-  const expired = rows.filter((r) => r.flag === "expired").length;
+  const reorderByProduct = new Map(reorder.map((row) => [row.productId, row]));
+  const enriched = stockRows.map((row) => {
+    const suggestion = reorderByProduct.get(row.productId);
+    return {
+      ...row,
+      parLevel: suggestion?.parLevel ?? null,
+      lowStock: suggestion?.lowStock ?? false,
+      suggestion: suggestion?.suggestion ?? "No par level on this product.",
+    };
+  });
+  const rows =
+    flag === "below_par" ? enriched.filter((row) => row.lowStock) : enriched;
+
+  const expiring = enriched.filter((r) => r.flag === "expiring_soon").length;
+  const expired = enriched.filter((r) => r.flag === "expired").length;
+  const belowPar = enriched.filter((r) => r.lowStock).length;
 
   return (
     <div className="space-y-5">
@@ -62,8 +86,10 @@ export default async function StockPage({
         </p>
         <p className="mt-1 text-sm text-slate-700">
           Alerts:{" "}
-          <strong className="text-amber-800">{expiring} expiring soon</strong>,{" "}
-          <strong className="text-red-800">{expired} expired</strong>
+          <strong className="text-amber-800">{expiring} expiring</strong>,{" "}
+          <strong className="text-red-800">{expired} expired</strong>,{" "}
+          <strong className="text-amber-800">{belowPar} below par</strong>.
+          Suggestions only — there is no order button.
         </p>
       </div>
       <Suspense fallback={<p className="text-sm">Loading…</p>}>

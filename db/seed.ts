@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createDb } from "../src/db";
+import { createDb, type AppDb } from "../src/db";
 import { audit } from "../src/lib/audit";
 import {
   appSettings,
@@ -42,19 +42,8 @@ async function pushSchema() {
   });
 }
 
-async function main() {
-  console.log(`Resetting clean demo state → ${dbPath}`);
-  resetFile();
-  // Clear any hot-reload singleton before push/seed
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).__kuDb = undefined;
-
-  await pushSchema();
-
-  const { db } = createDb(dbPath);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).__kuDb = { db, sqlite: undefined };
-
+/** Insert the clean demo rows. Does not delete the database file. */
+export async function seedDemo(db: AppDb) {
   // --- Vendors ---
   await db.insert(vendors).values([
     { id: 1, name: "Terumo" },
@@ -166,6 +155,9 @@ async function main() {
     { id: 4, productId: 2, idType: "hibc", value: "+H83800612C0" }, // placeholder HIBC
     { id: 5, productId: 3, idType: "catalog", value: "VC-ABL-01" },
     { id: 6, productId: 4, idType: "catalog", value: "VC-MAP-01" },
+    // Placeholder GTINs so demo GS1 labels resolve lot and expiry.
+    { id: 7, productId: 3, idType: "gtin", value: "00012345670001" },
+    { id: 8, productId: 4, idType: "gtin", value: "00012345670002" },
   ]);
   await audit({
     userId: 4,
@@ -263,6 +255,16 @@ async function main() {
       qty: 2,
       byUserId: 2,
       at: "2026-01-10T10:10:00",
+    },
+    {
+      eventType: "arrived",
+      productId: 2,
+      locationId: 1,
+      lot: "EXPIRED-SHELF",
+      expiry: "2020-01-01",
+      qty: 1,
+      byUserId: 2,
+      at: "2026-01-10T10:11:00",
     },
     {
       eventType: "arrived",
@@ -469,7 +471,7 @@ async function main() {
     entity: "exceptions",
     entityId: 1,
     action: "seed",
-    detail: "Seeded gap: extra sheath pulled without close-out",
+    detail: "case=1 product=1 gap=1 Seeded extra sheath pulled without close-out",
   }, db);
 
   // --- Today's open case (dashboard: items taken today) ---
@@ -503,17 +505,35 @@ async function main() {
     detail: `Open EP case for dashboard taken-today (${todayIso})`,
   }, db);
 
+  return { soonExpiryIso, todayIso };
+}
+
+async function main() {
+  console.log(`Resetting clean demo state → ${dbPath}`);
+  resetFile();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__kuDb = undefined;
+  await pushSchema();
+  const { db, sqlite } = createDb(dbPath);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__kuDb = { db, sqlite };
+  const { soonExpiryIso, todayIso } = await seedDemo(db);
+  sqlite.close();
   console.log(`Seed complete (clean demo): ${dbPath}`);
   console.log("Expected stockOnHand highlights:");
   console.log("  Terumo RSS802 lot 0001681425: arrived 3 - pulled 2 = 1");
   console.log(`  Terumo RSS802 lot EXPIRINGSOON1: arrived 1 = 1 (expires ${soonExpiryIso})`);
-  console.log("  Cardiva 800-612C: arrived 2 - pulled 1 = 1");
+  console.log("  Cardiva 800-612C lot G612C260420B: arrived 2 - pulled 1 = 1");
+  console.log("  Cardiva 800-612C lot EXPIRED-SHELF: arrived 1 (expired 2020-01-01)");
   console.log("  Vendor C ablation: arrived 2 - pulled 1 = 1");
   console.log("  Vendor C mapping: arrived 3 - pulled 3 + returned 1 = 1 (incl. today)");
   console.log(`Dashboard: taken today on case 2 (${todayIso}); open gap exception; EXPIRINGSOON1; low stock vs par`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const entry = (process.argv[1] ?? "").replace(/\\/g, "/");
+if (entry.endsWith("db/seed.ts") || entry.endsWith("db/seed.js")) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
