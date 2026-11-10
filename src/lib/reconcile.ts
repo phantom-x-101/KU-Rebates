@@ -1,6 +1,6 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { getDb, type AppDb } from "@/db";
-import { appSettings, cases, exceptions, scans } from "@/db/schema";
+import { appSettings, auditLog, cases, exceptions, scans } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { getCase, listCasePullLines } from "@/lib/cases";
 
@@ -156,6 +156,12 @@ export async function reconcileCase(
   };
 }
 
+function detailIsForCase(detail: string | null, caseId: number) {
+  if (!detail) return false;
+  const marker = `case=${caseId}`;
+  return detail === marker || detail.startsWith(`${marker} `);
+}
+
 async function ensureException(opts: {
   type: "taken_not_scanned_or_returned" | "closeout_exceeds_taken";
   productId: number;
@@ -174,11 +180,31 @@ async function ensureException(opts: {
         eq(exceptions.productId, opts.productId),
         eq(exceptions.status, "open"),
       ),
-    )
-    .limit(1);
+    );
 
   if (existing.length > 0) {
-    return { id: existing[0]!.id, created: false };
+    const logs = await opts.db
+      .select({
+        entityId: auditLog.entityId,
+        detail: auditLog.detail,
+      })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entity, "exceptions"),
+          inArray(
+            auditLog.entityId,
+            existing.map((row) => row.id),
+          ),
+        ),
+      );
+    const match = existing.find((row) =>
+      logs.some(
+        (log) =>
+          log.entityId === row.id && detailIsForCase(log.detail, opts.caseId),
+      ),
+    );
+    if (match) return { id: match.id, created: false };
   }
 
   const [row] = await opts.db

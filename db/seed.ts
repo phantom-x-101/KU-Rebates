@@ -166,6 +166,9 @@ async function main() {
     { id: 4, productId: 2, idType: "hibc", value: "+H83800612C0" }, // placeholder HIBC
     { id: 5, productId: 3, idType: "catalog", value: "VC-ABL-01" },
     { id: 6, productId: 4, idType: "catalog", value: "VC-MAP-01" },
+    // Placeholder GTINs so demo GS1 labels resolve lot and expiry.
+    { id: 7, productId: 3, idType: "gtin", value: "00012345670001" },
+    { id: 8, productId: 4, idType: "gtin", value: "00012345670002" },
   ]);
   await audit({
     userId: 4,
@@ -469,7 +472,7 @@ async function main() {
     entity: "exceptions",
     entityId: 1,
     action: "seed",
-    detail: "Seeded gap: extra sheath pulled without close-out",
+    detail: "case=1 product=1 gap=1 Seeded extra sheath pulled without close-out",
   }, db);
 
   // --- Today's open case (dashboard: items taken today) ---

@@ -45,8 +45,12 @@ export default async function HomePage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">KU Rebate prototype</h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Phase 8 adds the supply-chain dashboard (taken today, open exceptions,
-          expiring soon, low stock). Seed resets a clean demo; see the README.
+          Start at the{" "}
+          <Link href="/station" className="font-semibold underline">
+            scan station
+          </Link>
+          : arrive, pull, use or return, then check the case. Vendor C and the
+          invented quantities are placeholders.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
@@ -73,10 +77,16 @@ export default async function HomePage() {
               </>
             ) : null}
           </p>
+        ) : error ? (
+          <p className="mt-3 text-sm text-amber-800">
+            Database is not ready. Run{" "}
+            <code className="rounded bg-slate-200 px-1">npm run db:seed</code>, then choose a
+            user above.
+          </p>
         ) : (
           <p className="mt-3 text-sm text-amber-800">
-            No user selected. Run <code className="rounded bg-slate-200 px-1">npm run db:seed</code>{" "}
-            then choose a user above.
+            No user selected. Choose a user above — start with{" "}
+            <strong>Sam Supply</strong> for the supply-chain demo.
           </p>
         )}
       </section>

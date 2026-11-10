@@ -32,8 +32,8 @@ export default async function RootLayout({
     <html lang="en">
       <body className={`${sourceSans.variable} min-h-screen bg-slate-100 text-slate-900 antialiased`}>
         <Header users={users} currentUser={currentUser} />
-        <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
-        <footer className="mx-auto max-w-5xl px-4 pb-8 text-xs text-slate-500">
+        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+        <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-slate-500">
           Demo data. Vendor X and Vendor C are placeholders.
         </footer>
       </body>
