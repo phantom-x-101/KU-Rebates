@@ -9,12 +9,18 @@ import {
 } from "@/app/stock/actions";
 import type { StockViewRow } from "@/lib/stock-view";
 
+type StockTableRow = StockViewRow & {
+  parLevel: number | null;
+  lowStock: boolean;
+  suggestion: string;
+};
+
 type Loc = { id: number; name: string };
 type Vendor = { id: number; name: string };
 
 const initial: StockActionState = { ok: false, message: "" };
 
-function DisposeButton({ row }: { row: StockViewRow }) {
+function DisposeButton({ row }: { row: StockTableRow }) {
   const [state, action, pending] = useActionState(disposeExpiredAction, initial);
   if (row.flag !== "expired") return null;
   return (
@@ -48,7 +54,7 @@ export function StockTable({
   filters,
   canDispose,
 }: {
-  rows: StockViewRow[];
+  rows: StockTableRow[];
   locations: Loc[];
   vendors: Vendor[];
   filters: { locationId: string; vendorId: string; flag: string };
@@ -109,6 +115,7 @@ export function StockTable({
             <option value="all">All</option>
             <option value="expiring_soon">Expiring soon</option>
             <option value="expired">Expired</option>
+            <option value="below_par">Below par</option>
             <option value="ok">OK</option>
           </select>
         </label>
@@ -140,7 +147,9 @@ export function StockTable({
               <th className="py-2 pr-3 font-medium">Lot</th>
               <th className="py-2 pr-3 font-medium">Expiry</th>
               <th className="py-2 pr-3 font-medium">On hand</th>
+              <th className="py-2 pr-3 font-medium">Par</th>
               <th className="py-2 pr-3 font-medium">Flag</th>
+              <th className="py-2 pr-3 font-medium">Reorder suggestion</th>
               <th className="py-2 font-medium">Action</th>
             </tr>
           </thead>
@@ -158,20 +167,32 @@ export function StockTable({
                 <td className="py-2 pr-3 font-mono text-xs">{r.lot ?? "—"}</td>
                 <td className="py-2 pr-3">{r.expiry ?? "—"}</td>
                 <td className="py-2 pr-3 font-semibold">{r.onHand}</td>
+                <td className="py-2 pr-3">{r.parLevel ?? "—"}</td>
                 <td className="py-2 pr-3">
-                  {r.flag === "expiring_soon" ? (
-                    <span className="font-medium text-amber-800">
-                      Expiring soon
-                      {r.daysUntilExpiry != null
-                        ? ` (${r.daysUntilExpiry}d)`
-                        : ""}
-                    </span>
-                  ) : r.flag === "expired" ? (
-                    <span className="font-medium text-red-800">Expired</span>
-                  ) : (
-                    <span className="text-slate-600">OK</span>
-                  )}
+                  <div className="space-y-1">
+                    {r.flag === "expired" ? (
+                      <span className="block font-medium text-red-800">Expired</span>
+                    ) : null}
+                    {r.flag === "expiring_soon" ? (
+                      <span className="block font-medium text-amber-800">
+                        {r.daysUntilExpiry != null && r.daysUntilExpiry <= 30
+                          ? `Expiring within 30 days (${r.daysUntilExpiry}d)`
+                          : `Expiring soon${
+                              r.daysUntilExpiry != null
+                                ? ` (${r.daysUntilExpiry}d)`
+                                : ""
+                            }`}
+                      </span>
+                    ) : null}
+                    {r.lowStock ? (
+                      <span className="block font-medium text-amber-800">Below par</span>
+                    ) : null}
+                    {r.flag === "ok" && !r.lowStock ? (
+                      <span className="text-slate-600">OK</span>
+                    ) : null}
+                  </div>
                 </td>
+                <td className="max-w-xs py-2 pr-3 text-slate-700">{r.suggestion}</td>
                 <td className="py-2">
                   {canDispose ? <DisposeButton row={r} /> : null}
                 </td>
@@ -179,7 +200,7 @@ export function StockTable({
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-3 text-slate-500">
+                <td colSpan={9} className="py-3 text-slate-500">
                   No stock rows match these filters.
                 </td>
               </tr>

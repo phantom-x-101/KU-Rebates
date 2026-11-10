@@ -269,6 +269,16 @@ async function main() {
     },
     {
       eventType: "arrived",
+      productId: 2,
+      locationId: 1,
+      lot: "EXPIRED-SHELF",
+      expiry: "2020-01-01",
+      qty: 1,
+      byUserId: 2,
+      at: "2026-01-10T10:11:00",
+    },
+    {
+      eventType: "arrived",
       productId: 3,
       locationId: 1,
       lot: "VCABL1001",
@@ -510,7 +520,8 @@ async function main() {
   console.log("Expected stockOnHand highlights:");
   console.log("  Terumo RSS802 lot 0001681425: arrived 3 - pulled 2 = 1");
   console.log(`  Terumo RSS802 lot EXPIRINGSOON1: arrived 1 = 1 (expires ${soonExpiryIso})`);
-  console.log("  Cardiva 800-612C: arrived 2 - pulled 1 = 1");
+  console.log("  Cardiva 800-612C lot G612C260420B: arrived 2 - pulled 1 = 1");
+  console.log("  Cardiva 800-612C lot EXPIRED-SHELF: arrived 1 (expired 2020-01-01)");
   console.log("  Vendor C ablation: arrived 2 - pulled 1 = 1");
   console.log("  Vendor C mapping: arrived 3 - pulled 3 + returned 1 = 1 (incl. today)");
   console.log(`Dashboard: taken today on case 2 (${todayIso}); open gap exception; EXPIRINGSOON1; low stock vs par`);
