@@ -61,6 +61,7 @@ export async function listCases(db: AppDb = getDb()) {
       openedAt: cases.openedAt,
       closedAt: cases.closedAt,
       departmentName: departments.name,
+      departmentPhase: departments.phase,
       roomName: rooms.name,
       procedureTypeName: procedureTypes.name,
     })
@@ -83,6 +84,7 @@ export async function getCase(caseId: number, db: AppDb = getDb()) {
       roomId: cases.roomId,
       procedureTypeId: cases.procedureTypeId,
       departmentName: departments.name,
+      departmentPhase: departments.phase,
       roomName: rooms.name,
       procedureTypeName: procedureTypes.name,
     })

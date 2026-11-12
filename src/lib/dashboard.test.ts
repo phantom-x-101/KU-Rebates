@@ -74,22 +74,25 @@ describe("getSupplyChainDashboard against seed", () => {
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
-  it("shows taken today, open exceptions, expiring ≤30d, and low stock", async () => {
+  it("leaves today empty, with open exceptions, expiring ≤30d, and low stock", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
-    const dash = await getSupplyChainDashboard(new Date(), db);
+    const dash = await getSupplyChainDashboard(new Date(), created.db);
 
-    expect(dash.takenTodayQty).toBeGreaterThan(0);
-    expect(dash.takenToday.length).toBeGreaterThan(0);
+    expect(dash.takenTodayQty).toBe(0);
+    expect(dash.takenToday).toHaveLength(0);
     expect(dash.openExceptions.length).toBeGreaterThan(0);
     expect(
       dash.openExceptions.some(

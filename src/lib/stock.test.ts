@@ -27,6 +27,9 @@ describe("stockOnHand", () => {
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
@@ -36,11 +39,11 @@ describe("stockOnHand", () => {
   it("computes arrived + returned - pulled - expired for seed data", async () => {
     const { createDb } = await import("@/db");
     const { stockOnHand } = await import("@/lib/stock");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
-    const rows = await stockOnHand({}, db);
+    const rows = await stockOnHand({}, created.db);
     const byKey = Object.fromEntries(
       rows.map((r) => [`${r.productId}|${r.lot}`, r.onHand]),
     );
@@ -53,7 +56,7 @@ describe("stockOnHand", () => {
     expect(byKey["2|G612C260420B"]).toBe(1);
     // Ablation: arrived 2 - pulled 1 = 1
     expect(byKey["3|VCABL1001"]).toBe(1);
-    // Mapping: arrived 3 - pulled 3 + returned 1 = 1 (incl. today's dashboard pull)
+    // Mapping: arrived 3 - pulled 3 + returned 1 = 1 (extra pull is historical, not today)
     expect(byKey["4|VCMAP2001"]).toBe(1);
   });
 });

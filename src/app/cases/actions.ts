@@ -8,15 +8,16 @@ import {
   CASE_ROLES,
   openCase,
 } from "@/lib/cases";
-import {
-  closeoutReturned,
-  closeoutUsed,
-  closeoutWasted,
-} from "@/lib/closeout";
+import { openOrResumeCase } from "@/lib/case-open";
+import { closeoutReturned } from "@/lib/closeout";
 import { lookupForPull, recordPull } from "@/lib/pull";
 import { getCurrentUser } from "@/lib/session";
 
-export type CaseActionState = { ok: boolean; message: string };
+export type CaseActionState = {
+  ok: boolean;
+  message: string;
+  resumeCaseId?: number;
+};
 
 async function requireCaseUser() {
   const user = await getCurrentUser();
@@ -41,16 +42,27 @@ export async function openCaseAction(
 ): Promise<CaseActionState> {
   try {
     const user = await requireCaseUser();
-    const row = await openCase(
-      {
-        departmentId: str(formData, "departmentId"),
-        roomId: str(formData, "roomId") || undefined,
-        procedureTypeId: str(formData, "procedureTypeId") || undefined,
-      },
-      user.id,
-    );
+    const input = {
+      departmentId: str(formData, "departmentId"),
+      roomId: str(formData, "roomId") || undefined,
+      procedureTypeId: str(formData, "procedureTypeId") || undefined,
+    };
+    let caseId: number;
+    if (input.roomId) {
+      const { resumed, caseRow } = await openOrResumeCase(input, user.id);
+      if (resumed) {
+        return {
+          ok: false,
+          message: `A case is already open in ${caseRow.roomName}`,
+          resumeCaseId: caseRow.id,
+        };
+      }
+      caseId = caseRow.id;
+    } else {
+      caseId = (await openCase(input, user.id)).id;
+    }
     revalidatePath("/cases");
-    redirect(`/cases/${row.id}`);
+    redirect(`/cases/${caseId}`);
   } catch (e) {
     if (e && typeof e === "object" && "digest" in e) throw e; // next redirect
     return {
@@ -138,10 +150,7 @@ export async function closeoutAction(
 ): Promise<CaseActionState> {
   try {
     const user = await requireCaseUser();
-    const disposition = str(formData, "disposition") as
-      | "used"
-      | "wasted"
-      | "returned";
+    const disposition = str(formData, "disposition");
     const payload = {
       caseId: str(formData, "caseId"),
       productId: str(formData, "productId"),
@@ -153,10 +162,10 @@ export async function closeoutAction(
       disposition,
     };
 
-    if (disposition === "used") await closeoutUsed(payload, user.id);
-    else if (disposition === "wasted") await closeoutWasted(payload, user.id);
-    else if (disposition === "returned") await closeoutReturned(payload, user.id);
-    else throw new Error("Invalid disposition");
+    if (disposition !== "returned") {
+      throw new Error("Only return is part of this workflow");
+    }
+    await closeoutReturned(payload, user.id);
 
     const caseId = Number(payload.caseId);
     revalidatePath(`/cases/${caseId}`);

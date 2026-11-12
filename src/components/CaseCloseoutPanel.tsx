@@ -48,25 +48,9 @@ function CloseoutButtons({
         <input type="hidden" name="qty" value={1} />
         <button
           name="disposition"
-          value="used"
-          disabled={pending}
-          className="rounded bg-emerald-800 px-2 py-0.5 text-xs text-white disabled:opacity-60"
-        >
-          Used
-        </button>
-        <button
-          name="disposition"
-          value="wasted"
-          disabled={pending}
-          className="rounded bg-amber-700 px-2 py-0.5 text-xs text-white disabled:opacity-60"
-        >
-          Wasted
-        </button>
-        <button
-          name="disposition"
           value="returned"
           disabled={pending}
-          className="rounded bg-slate-700 px-2 py-0.5 text-xs text-white disabled:opacity-60"
+          className="rounded bg-pc-blue px-2 py-0.5 text-xs text-white disabled:opacity-60"
         >
           Returned
         </button>
@@ -98,8 +82,7 @@ export function CaseCloseoutPanel({
     <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
       <h2 className="text-lg font-medium">Close-out</h2>
       <p className="text-sm text-slate-600">
-        Mark each pulled item used, wasted, or returned. Wasted opens an{" "}
-        <code>opened_or_wasted</code> exception. Returned puts stock back on hand.
+        Return each item that comes back to the shelf. Anything still out is a gap.
       </p>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
@@ -108,8 +91,6 @@ export function CaseCloseoutPanel({
               <th className="py-2 pr-3 font-medium">Product</th>
               <th className="py-2 pr-3 font-medium">Lot</th>
               <th className="py-2 pr-3 font-medium">Pulled</th>
-              <th className="py-2 pr-3 font-medium">Used</th>
-              <th className="py-2 pr-3 font-medium">Wasted</th>
               <th className="py-2 pr-3 font-medium">Returned</th>
               <th className="py-2 pr-3 font-medium">Left</th>
               <th className="py-2 font-medium">Action</th>
@@ -126,8 +107,6 @@ export function CaseCloseoutPanel({
                 </td>
                 <td className="py-2 pr-3 font-mono text-xs">{l.lot ?? "—"}</td>
                 <td className="py-2 pr-3">{l.pulled}</td>
-                <td className="py-2 pr-3">{l.used}</td>
-                <td className="py-2 pr-3">{l.wasted}</td>
                 <td className="py-2 pr-3">{l.returned}</td>
                 <td className="py-2 pr-3 font-semibold">{l.remaining}</td>
                 <td className="py-2">
@@ -141,7 +120,7 @@ export function CaseCloseoutPanel({
             ))}
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-3 text-slate-500">
+                <td colSpan={6} className="py-3 text-slate-500">
                   No pulls yet.
                 </td>
               </tr>
@@ -154,7 +133,7 @@ export function CaseCloseoutPanel({
         <div className="flex flex-wrap gap-2 pt-2">
           <button
             type="button"
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white"
+            className="rounded bg-pc-teal px-3 py-1.5 text-sm text-white"
             onClick={() =>
               start(async () => {
                 const r = await closeCaseAction(caseId);

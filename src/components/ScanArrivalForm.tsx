@@ -120,7 +120,7 @@ export function ScanArrivalForm({
             type="button"
             disabled={pendingLookup || !raw.trim()}
             onClick={() => applyLookup(raw)}
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+            className="rounded bg-pc-teal px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
           >
             {pendingLookup ? "Looking up…" : "Identify"}
           </button>
@@ -255,7 +255,7 @@ export function ScanArrivalForm({
             <button
               type="submit"
               disabled={savePending}
-              className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+              className="rounded bg-pc-teal px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
             >
               {savePending ? "Saving…" : "Save arrived stock event"}
             </button>

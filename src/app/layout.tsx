@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Source_Sans_3 } from "next/font/google";
-import { Header } from "@/components/Header";
+import { AppFrame } from "@/components/Header";
 import { getCurrentUser, listUsers } from "@/lib/session";
 import "./globals.css";
 
@@ -10,8 +10,8 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "KU Rebate — Consignment prototype",
-  description: "Pycube consignment prototype alongside KU workflows. Demo data only.",
+  title: "PyCube — Rebate Prototype",
+  description: "PyCube rebate prototype. Demo data only.",
 };
 
 export default async function RootLayout({
@@ -30,12 +30,10 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${sourceSans.variable} min-h-screen bg-slate-100 text-slate-900 antialiased`}>
-        <Header users={users} currentUser={currentUser} />
-        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
-        <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-slate-500">
-          Demo data. Vendor X and Vendor C are placeholders.
-        </footer>
+      <body className={`${sourceSans.variable} min-h-screen bg-pc-bg text-[#16323c] antialiased`}>
+        <AppFrame users={users} currentUser={currentUser}>
+          {children}
+        </AppFrame>
       </body>
     </html>
   );

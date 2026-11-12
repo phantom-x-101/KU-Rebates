@@ -1,13 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { openOrResumeCase } from "@/lib/case-open";
 import { CASE_ROLES } from "@/lib/cases";
 import { getCurrentUser } from "@/lib/session";
 import {
   addStationProduct,
   applyStationScan,
   closeStationCase,
-  openStationCase,
   type StationMode,
   type StationOutcome,
 } from "@/lib/station";
@@ -56,11 +56,35 @@ export async function scanAction(input: {
   return result;
 }
 
-export async function openEpCaseAction(): Promise<{ id: number }> {
-  const user = await requireStationUser();
-  const row = await openStationCase(user.id);
-  revalidateDemo();
-  return { id: row.id };
+export type OpenCaseResult =
+  | { status: "opened"; id: number }
+  | { status: "exists"; id: number; message: string }
+  | { status: "error"; message: string };
+
+export async function openStationCaseAction(input: {
+  departmentId: number;
+  roomId: number;
+  procedureTypeId: number | null;
+}): Promise<OpenCaseResult> {
+  try {
+    const user = await requireStationUser();
+    const { resumed, caseRow } = await openOrResumeCase(input, user.id);
+    if (resumed) {
+      return {
+        status: "exists",
+        id: caseRow.id,
+        message: `A case is already open in ${caseRow.roomName}`,
+      };
+    }
+    revalidateDemo();
+    revalidatePath("/cases");
+    return { status: "opened", id: caseRow.id };
+  } catch (error) {
+    return {
+      status: "error",
+      message: error instanceof Error ? error.message : "Could not open the case",
+    };
+  }
 }
 
 export async function closeEpCaseAction(caseId: number): Promise<{
@@ -78,7 +102,7 @@ export async function closeEpCaseAction(caseId: number): Promise<{
       balanced: reconciliation.balanced,
       message: reconciliation.balanced
         ? "Check passed. Case closed."
-        : `Gap of ${reconciliation.gap}. Taken ${reconciliation.taken} ≠ used ${reconciliation.used} + wasted ${reconciliation.wasted} + returned ${reconciliation.returned}. Exception recorded.`,
+        : `Gap of ${reconciliation.gap}. Taken ${reconciliation.taken}, returned ${reconciliation.returned}. Exception recorded.`,
       reconciliation,
     };
   } catch (error) {

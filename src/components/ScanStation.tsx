@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   addProductAction,
   closeEpCaseAction,
-  openEpCaseAction,
   scanAction,
 } from "@/app/station/actions";
+import { StationOpenCase } from "@/components/StationOpenCase";
+import type { CaseOpenOptions } from "@/lib/case-open";
 import type { DemoLabel } from "@/lib/demo-labels";
 import type { CaseReconciliation } from "@/lib/reconcile";
 import type { StockViewRow } from "@/lib/stock-view";
@@ -22,6 +23,7 @@ type CaseRow = {
   departmentName: string;
   roomName: string | null;
   procedureTypeName: string | null;
+  preview: boolean;
 };
 
 type Line = {
@@ -42,9 +44,7 @@ type Vendor = { id: number; name: string };
 const MODES: { id: StationMode; label: string }[] = [
   { id: "arrive", label: "Arrive" },
   { id: "pull", label: "Pull" },
-  { id: "use", label: "Use" },
   { id: "return", label: "Return" },
-  { id: "waste", label: "Waste" },
 ];
 
 const MODE_KEY = "ku-station-mode";
@@ -80,6 +80,7 @@ export function ScanStation({
   stock,
   vendors,
   simulate,
+  caseOptions,
 }: {
   caseRow: CaseRow | null;
   reconciliation: CaseReconciliation | null;
@@ -87,6 +88,7 @@ export function ScanStation({
   stock: StockViewRow[];
   vendors: Vendor[];
   simulate: DemoLabel[];
+  caseOptions: CaseOpenOptions;
 }) {
   const router = useRouter();
   const scanRef = useRef<HTMLInputElement>(null);
@@ -99,10 +101,38 @@ export function ScanStation({
     message: string;
   } | null>(null);
   const [sim, setSim] = useState("");
+  const [arrivals, setArrivals] = useState<
+    {
+      id: number;
+      description: string;
+      vendorName: string;
+      catalogNumber: string;
+      lot: string | null;
+      expiry: string | null;
+    }[]
+  >([]);
+
+  function rememberArrival(outcome: StationOutcome) {
+    if (outcome.status !== "success" || outcome.mode !== "arrive") return;
+    const item = outcome.item;
+    setArrivals((prev) =>
+      [
+        {
+          id: Date.now(),
+          description: item.description,
+          vendorName: item.vendorName,
+          catalogNumber: item.catalogNumber,
+          lot: item.lot,
+          expiry: item.expiry,
+        },
+        ...prev,
+      ].slice(0, 4),
+    );
+  }
 
   useEffect(() => {
     const saved = sessionStorage.getItem(MODE_KEY);
-    if (saved === "arrive" || saved === "pull" || saved === "use" || saved === "return" || saved === "waste") {
+    if (saved === "arrive" || saved === "pull" || saved === "return") {
       setMode(saved);
     }
   }, []);
@@ -148,6 +178,7 @@ export function ScanStation({
         expiry: extra?.expiry,
       });
       setResult(outcome);
+      rememberArrival(outcome);
       cue(outcome);
       if (scanRef.current) scanRef.current.value = "";
       setSim("");
@@ -158,19 +189,10 @@ export function ScanStation({
     }
   }
 
-  async function openCase() {
-    if (busy.current) return;
-    busy.current = true;
-    setPending(true);
-    try {
-      const opened = await openEpCaseAction();
-      setResult(null);
-      setCloseNote(null);
-      router.push(`/station?case=${opened.id}`);
-    } finally {
-      busy.current = false;
-      setPending(false);
-    }
+  function goToCase(caseId: number) {
+    setResult(null);
+    setCloseNote(null);
+    router.push(`/station?case=${caseId}`);
   }
 
   async function closeCase() {
@@ -198,16 +220,17 @@ export function ScanStation({
   const showTick = Boolean(tally && tally.balanced && activity > 0);
   const showGap = Boolean(tally && !tally.balanced);
 
-  const caseLabel = caseRow
-    ? `${caseRow.departmentName} case #${caseRow.id}${
-        caseRow.procedureTypeName ? ` · ${caseRow.procedureTypeName}` : ""
-      }${caseRow.roomName ? ` · ${caseRow.roomName}` : ""} · ${caseRow.status}`
+  const caseOpen = caseRow?.status === "open";
+  const caseTitle = caseRow
+    ? [caseRow.departmentName, caseRow.roomName, caseRow.procedureTypeName]
+        .filter(Boolean)
+        .join(" · ")
     : "No case open";
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[1.45fr_1fr]">
       <section className="space-y-4">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className="grid grid-cols-3 gap-2">
           {MODES.map((entry) => {
             const active = mode === entry.id;
             return (
@@ -217,9 +240,7 @@ export function ScanStation({
                 onClick={() => setMode(entry.id)}
                 className={`rounded-xl px-3 py-4 text-lg font-bold uppercase tracking-wide ${
                   active
-                    ? entry.id === "waste"
-                      ? "bg-amber-700 text-white"
-                      : "bg-slate-900 text-white"
+                    ? "bg-pc-teal text-white"
                     : "border border-slate-300 bg-white text-slate-800"
                 }`}
               >
@@ -234,27 +255,51 @@ export function ScanStation({
             Current mode
           </p>
           <p className="text-2xl font-bold uppercase">{mode}</p>
-          <p className="mt-1 text-base text-slate-800">{caseLabel}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void openCase()}
-              disabled={pending}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              Open EP case
-            </button>
-            <button
-              type="button"
-              onClick={() => void closeCase()}
-              disabled={pending || caseRow?.status !== "open"}
-              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              Close case
-            </button>
+          <div className="mt-2 border-t border-slate-200 pt-2">
+            <p className="text-xl font-bold text-slate-900">
+              {caseTitle}
+              {caseRow?.preview ? (
+                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-xs font-semibold uppercase text-amber-900">
+                  preview
+                </span>
+              ) : null}
+            </p>
+            {caseRow ? (
+              <p className="text-sm text-slate-600">
+                Case #{caseRow.id} · {caseRow.status}
+              </p>
+            ) : null}
           </div>
+          {caseOpen ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void closeCase()}
+                disabled={pending}
+                className="rounded-lg border border-pc-teal bg-white px-4 py-2 text-sm font-semibold text-pc-teal disabled:opacity-40"
+              >
+                Close case
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/station")}
+                className="text-sm font-medium text-slate-600 underline"
+              >
+                Open a different case
+              </button>
+            </div>
+          ) : (
+            <div className="mt-3">
+              <StationOpenCase
+                options={caseOptions}
+                disabled={pending}
+                onOpened={goToCase}
+              />
+            </div>
+          )}
         </div>
 
+        <div className="space-y-4 rounded-xl border bg-white p-4">
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -270,7 +315,7 @@ export function ScanStation({
             autoFocus
             autoComplete="off"
             placeholder="Scan or type a barcode, then Enter"
-            className="mt-1 w-full rounded-xl border-2 border-slate-900 bg-white px-4 py-4 text-2xl outline-none ring-emerald-600 focus:ring-4"
+            className="mt-1 w-full rounded-xl border-2 border-pc-teal bg-white px-4 py-4 text-2xl text-[#16323c] outline-none ring-pc-blue focus:ring-4"
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -319,6 +364,7 @@ export function ScanStation({
             </button>
           ))}
         </div>
+        </div>
 
         {pending ? (
           <p className="text-sm font-medium text-slate-600">Reading scan…</p>
@@ -366,7 +412,7 @@ export function ScanStation({
               </label>
               <button
                 type="submit"
-                className="self-end rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+                className="self-end rounded-lg bg-pc-teal px-3 py-2 text-sm font-semibold text-white"
               >
                 Confirm lot
               </button>
@@ -398,6 +444,7 @@ export function ScanStation({
                     expiry: String(data.get("expiry") ?? ""),
                   });
                   setResult(outcome);
+                  rememberArrival(outcome);
                   cue(outcome);
                   router.refresh();
                 } finally {
@@ -470,7 +517,7 @@ export function ScanStation({
             </div>
             <button
               type="submit"
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+              className="rounded-lg bg-pc-teal px-3 py-2 text-sm font-semibold text-white"
             >
               Save product
             </button>
@@ -501,7 +548,7 @@ export function ScanStation({
                 <span className="ml-2 text-base font-semibold text-slate-500">taken</span>
               </p>
               <p className="mt-1 text-lg tabular-nums text-slate-800">
-                {tally.used} used + {tally.wasted} wasted + {tally.returned} returned
+                {tally.returned} returned
               </p>
               {showTick ? (
                 <p className="mt-3 text-2xl font-bold text-emerald-700">✓ Check passed</p>
@@ -528,14 +575,14 @@ export function ScanStation({
             </>
           ) : (
             <p className="mt-2 text-sm text-slate-600">
-              Open an EP case to pull, use, waste, or return.
+              Open a case to pull or return.
             </p>
           )}
         </div>
 
         <div className="rounded-xl border border-slate-300 bg-white p-4">
           <h2 className="text-lg font-bold">On hand</h2>
-          <ul className="mt-2 divide-y divide-slate-200">
+          <ul className="mt-2 max-h-96 divide-y divide-slate-200 overflow-y-auto overscroll-contain pr-1">
             {stock.map((row) => {
               const hot = involved.has(row.productId);
               return (
@@ -566,6 +613,30 @@ export function ScanStation({
               <li className="py-2 text-sm text-slate-500">Shelf is empty.</li>
             ) : null}
           </ul>
+        </div>
+
+        <div className="rounded-xl border border-slate-300 bg-white p-3">
+          <h2 className="text-sm font-bold">Just arrived</h2>
+          {arrivals.length === 0 ? (
+            <p className="mt-1 text-xs text-slate-500">
+              New shelf scans show here.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {arrivals.map((item, index) => (
+                <li key={item.id} className="text-sm leading-tight">
+                  <p className="font-medium">
+                    {item.vendorName} {item.catalogNumber}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    {item.description}
+                    {item.lot ? ` · lot ${item.lot}` : ""}
+                    {index === 0 ? " · just added" : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </aside>
     </div>

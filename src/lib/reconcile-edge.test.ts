@@ -40,6 +40,9 @@ describe("Phase 5 edge: surplus / duplicates / wasted / abort / permissions", ()
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
@@ -48,10 +51,10 @@ describe("Phase 5 edge: surplus / duplicates / wasted / abort / permissions", ()
 
   async function freshDb() {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
-    return db;
+    (globalThis as any).__kuDb = created;
+    return created.db;
   }
 
   it("surplus: used without pull → closeout_exceeds_taken (not silent)", async () => {
@@ -380,24 +383,24 @@ describe("Phase 5 edge: surplus / duplicates / wasted / abort / permissions", ()
     expect(timed.results.some((r) => r.caseId === c.id)).toBe(false);
   });
 
-  it("permissions: supply_chain + admin allowed; vendor_rep / tech / category_owner denied", () => {
+  it("permissions: supply_chain, admin, and category_owner allowed; vendor_rep and tech denied", () => {
     expect(canAccessExceptionQueue({ role: "supply_chain", active: 1 })).toBe(
       true,
     );
     expect(canAccessExceptionQueue({ role: "admin", active: 1 })).toBe(true);
+    expect(canAccessExceptionQueue({ role: "category_owner", active: 1 })).toBe(
+      true,
+    );
     expect(canAccessExceptionQueue({ role: "vendor_rep", active: 1 })).toBe(
       false,
     );
     expect(canAccessExceptionQueue({ role: "tech", active: 1 })).toBe(false);
-    expect(
-      canAccessExceptionQueue({ role: "category_owner", active: 1 }),
-    ).toBe(false);
     expect(canAccessExceptionQueue(null)).toBe(false);
     expect(canAccessExceptionQueue({ role: "admin", active: 0 })).toBe(false);
 
     expect(() =>
       assertCanAccessExceptionQueue({ role: "vendor_rep", active: 1 }),
-    ).toThrow(/supply_chain or admin/);
+    ).toThrow(/supply_chain, category_owner, or admin/);
     expect(() =>
       assertCanAccessExceptionQueue({ role: "supply_chain", active: 1 }),
     ).not.toThrow();

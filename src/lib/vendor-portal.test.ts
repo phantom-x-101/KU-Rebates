@@ -80,6 +80,9 @@ describe("Terumo rep cannot read Cardiva", () => {
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
@@ -88,10 +91,10 @@ describe("Terumo rep cannot read Cardiva", () => {
 
   async function freshDb() {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
-    return db;
+    (globalThis as any).__kuDb = created;
+    return created.db;
   }
 
   it("listVendorStock(Terumo) never returns Cardiva products", async () => {

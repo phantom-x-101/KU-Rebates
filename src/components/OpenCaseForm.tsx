@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 import { openCaseAction, type CaseActionState } from "@/app/cases/actions";
 
@@ -86,11 +87,18 @@ export function OpenCaseForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+        className="rounded bg-pc-teal px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
       >
         {pending ? "Opening…" : "Open case"}
       </button>
-      {state.message ? (
+      {state.resumeCaseId ? (
+        <p className="text-sm text-amber-900">
+          {state.message}.{" "}
+          <Link href={`/cases/${state.resumeCaseId}`} className="font-semibold underline">
+            Resume it
+          </Link>
+        </p>
+      ) : state.message ? (
         <p className="text-sm text-red-700">{state.message}</p>
       ) : null}
     </form>

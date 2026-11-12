@@ -113,7 +113,7 @@ export function CasePullForm({
           type="button"
           disabled={pendingLookup || !raw.trim()}
           onClick={() => lookup(raw)}
-          className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-60"
+          className="rounded bg-pc-teal px-3 py-1.5 text-sm text-white disabled:opacity-60"
         >
           {pendingLookup ? "…" : "Identify"}
         </button>
@@ -192,7 +192,7 @@ export function CasePullForm({
           <button
             type="submit"
             disabled={pending}
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+            className="rounded bg-pc-teal px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
           >
             {pending ? "Saving…" : "Record pull"}
           </button>

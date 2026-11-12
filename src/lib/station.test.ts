@@ -58,7 +58,7 @@ describe("scan station", () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
-  it("arrives, pulls, uses, returns, wastes, and flags a gap", async () => {
+  it("arrives, pulls, returns, and flags a gap", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     sqlite = created.sqlite;
@@ -119,7 +119,7 @@ describe("scan station", () => {
 
     const ep = await openStationCase(1, db);
     const notPulled = await applyStationScan(
-      { mode: "use", rawBarcode: ABLATION_GS1_SAMPLE, caseId: ep.id },
+      { mode: "return", rawBarcode: ABLATION_GS1_SAMPLE, caseId: ep.id },
       1,
       db,
     );
@@ -139,16 +139,18 @@ describe("scan station", () => {
     );
     expect(pullAblation.status).toBe("success");
 
-    const used = await applyStationScan(
-      { mode: "use", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
+    const broughtBack = await applyStationScan(
+      { mode: "return", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
       1,
       db,
     );
-    expect(used.status).toBe("success");
-    if (used.status === "success") expect(used.headline).toBe("Marked used");
+    expect(broughtBack.status).toBe("success");
+    if (broughtBack.status === "success") {
+      expect(broughtBack.headline).toBe("Returned to shelf");
+    }
 
     const duplicate = await applyStationScan(
-      { mode: "use", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
+      { mode: "return", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
       1,
       db,
     );
@@ -167,39 +169,8 @@ describe("scan station", () => {
 
     const balanced = await closeStationCase(ep.id, 1, db);
     expect(balanced.taken).toBe(2);
-    expect(balanced.used).toBe(1);
-    expect(balanced.returned).toBe(1);
+    expect(balanced.returned).toBe(2);
     expect(balanced.balanced).toBe(true);
-
-    const gapCase = await openStationCase(1, db);
-    const pullMap = await applyStationScan(
-      { mode: "pull", rawBarcode: "(01)00012345670002(17)270815(10)VCMAP2001", caseId: gapCase.id },
-      1,
-      db,
-    );
-    expect(pullMap.status).toBe("success");
-    const wasted = await applyStationScan(
-      {
-        mode: "waste",
-        rawBarcode: "(01)00012345670002(17)270815(10)VCMAP2001",
-        caseId: gapCase.id,
-      },
-      1,
-      db,
-    );
-    expect(wasted.status).toBe("success");
-
-    const wastedRows = await db
-      .select()
-      .from(exceptions)
-      .where(
-        and(
-          eq(exceptions.type, "opened_or_wasted"),
-          eq(exceptions.productId, 4),
-          eq(exceptions.status, "open"),
-        ),
-      );
-    expect(wastedRows.length).toBeGreaterThanOrEqual(1);
 
     const leftOut = await openStationCase(1, db);
     const pullLeft = await applyStationScan(

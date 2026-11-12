@@ -12,7 +12,7 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-semibold">Supply chain dashboard</h1>
         <p className="text-sm text-amber-800">
           Dashboard is for <strong>supply_chain</strong> and{" "}
-          <strong>admin</strong>. Pick Sam Supply or Admin Ada in the header.
+          <strong>admin</strong>. Pick Sam or Ada in the header.
         </p>
         <Link href="/" className="text-sm underline">
           Back to home
@@ -31,7 +31,7 @@ export default async function DashboardPage() {
         </h1>
         <p className="mt-1 text-sm text-slate-600">
           Snapshot for <strong>{dash.asOf}</strong> (UTC day). Suggestions
-          only — KU places orders; Pycube never does.
+          only. This prototype does not place orders.
         </p>
       </div>
 
