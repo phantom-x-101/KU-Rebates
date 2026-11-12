@@ -1,8 +1,11 @@
 /**
- * Demo seed for the KU Rebate consignment prototype.
+ * Demo seed for the rebate consignment prototype.
  * Always resets to a clean demo state (deletes the SQLite file first).
- * Placeholders: Vendor X / Vendor C and invented quantities are marked as such.
+ * Placeholder vendors and invented quantities are marked as such.
  * No patient identifiers. No write-back to Epic/GE/Workday.
+ *
+ * The six-week history uses a fixed random seed (see db/demo-history.ts).
+ * Dates are offsets from today UTC, so every reset on the same day matches.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -25,6 +28,7 @@ import {
   users,
   vendors,
 } from "../src/db/schema";
+import { seedLabHistory } from "./demo-history";
 
 const dbPath = process.env.KU_DB_PATH ?? path.join(process.cwd(), "data", "ku.sqlite");
 
@@ -121,6 +125,7 @@ export async function seedDemo(db: AppDb) {
       catalogNumber: "RSS802",
       description: "Terumo Pinnacle sheath 8 Fr",
       category: "sheath",
+      unitPrice: 185,
       inItemMaster: 1,
     },
     {
@@ -129,6 +134,7 @@ export async function seedDemo(db: AppDb) {
       catalogNumber: "800-612C",
       description: "Cardiva Vascade MVP closure",
       category: "closure",
+      unitPrice: 395,
       inItemMaster: 1,
     },
     {
@@ -137,6 +143,7 @@ export async function seedDemo(db: AppDb) {
       catalogNumber: "VC-ABL-01",
       description: "Vendor C ablation catheter (placeholder)",
       category: "ablation catheter",
+      unitPrice: 1680,
       inItemMaster: 0,
     },
     {
@@ -145,7 +152,8 @@ export async function seedDemo(db: AppDb) {
       catalogNumber: "VC-MAP-01",
       description: "Vendor C mapping catheter (placeholder)",
       category: "mapping catheter",
-      inItemMaster: 0,
+      unitPrice: 920,
+      inItemMaster: 1,
     },
   ]);
   await db.insert(productIdentifiers).values([
@@ -196,9 +204,9 @@ export async function seedDemo(db: AppDb) {
     {
       productId: 4,
       departmentId: 1,
-      accessMode: "brought_in_for_case",
+      accessMode: "on_shelf",
       locationId: 1,
-      parLevel: null,
+      parLevel: 1,
     },
   ]);
   await db.insert(expiryRules).values([
@@ -474,36 +482,8 @@ export async function seedDemo(db: AppDb) {
     detail: "case=1 product=1 gap=1 Seeded extra sheath pulled without close-out",
   }, db);
 
-  // --- Today's open case (dashboard: items taken today) ---
   const todayIso = new Date().toISOString().slice(0, 10);
-  await db.insert(cases).values({
-    id: 2,
-    departmentId: 1,
-    roomId: 1,
-    procedureTypeId: 1,
-    openedAt: `${todayIso}T09:00:00`,
-    openedBy: 1,
-    status: "open",
-  });
-  await db.insert(stockEvents).values({
-    eventType: "pulled",
-    productId: 4,
-    locationId: 1,
-    caseId: 2,
-    lot: "VCMAP2001",
-    expiry: "2027-08-15",
-    qty: 1,
-    byUserId: 1,
-    at: `${todayIso}T09:15:00`,
-  });
-  await audit({
-    userId: 1,
-    container: 2,
-    entity: "cases",
-    entityId: 2,
-    action: "seed_open",
-    detail: `Open EP case for dashboard taken-today (${todayIso})`,
-  }, db);
+  await seedLabHistory(db, { todayIso });
 
   return { soonExpiryIso, todayIso };
 }
@@ -520,14 +500,8 @@ async function main() {
   const { soonExpiryIso, todayIso } = await seedDemo(db);
   sqlite.close();
   console.log(`Seed complete (clean demo): ${dbPath}`);
-  console.log("Expected stockOnHand highlights:");
-  console.log("  Terumo RSS802 lot 0001681425: arrived 3 - pulled 2 = 1");
-  console.log(`  Terumo RSS802 lot EXPIRINGSOON1: arrived 1 = 1 (expires ${soonExpiryIso})`);
-  console.log("  Cardiva 800-612C lot G612C260420B: arrived 2 - pulled 1 = 1");
-  console.log("  Cardiva 800-612C lot EXPIRED-SHELF: arrived 1 (expired 2020-01-01)");
-  console.log("  Vendor C ablation: arrived 2 - pulled 1 = 1");
-  console.log("  Vendor C mapping: arrived 3 - pulled 3 + returned 1 = 1 (incl. today)");
-  console.log(`Dashboard: taken today on case 2 (${todayIso}); open gap exception; EXPIRINGSOON1; low stock vs par`);
+  console.log(`  Terumo lot 0001681425 on hand 1; EXPIRINGSOON1 expires ${soonExpiryIso}`);
+  console.log(`  Today ${todayIso} has no cases, so a live case can start from the station.`);
 }
 
 const entry = (process.argv[1] ?? "").replace(/\\/g, "/");

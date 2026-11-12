@@ -58,7 +58,7 @@ function AssignForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-slate-800 px-2 py-0.5 text-xs text-white disabled:opacity-60"
+        className="rounded bg-pc-teal px-2 py-0.5 text-xs text-white disabled:opacity-60"
       >
         Assign
       </button>

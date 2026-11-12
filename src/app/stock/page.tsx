@@ -79,17 +79,22 @@ export default async function StockPage({
         <h1 className="text-2xl font-semibold tracking-tight">Stock on hand</h1>
         <p className="mt-1 text-sm text-slate-600">
           Derived from stock events. Expiring soon uses each vendor&apos;s{" "}
-          <code>expiry_rules.days_before</code>.{" "}
-          <Link href="/reorder" className="underline">
-            Reorder view
-          </Link>
+          <code>expiry_rules.days_before</code>.
+          {user.role !== "tech" ? (
+            <>
+              {" "}
+              <Link href="/reorder" className="underline">
+                Reorder view
+              </Link>
+            </>
+          ) : null}
         </p>
         <p className="mt-1 text-sm text-slate-700">
           Alerts:{" "}
           <strong className="text-amber-800">{expiring} expiring</strong>,{" "}
           <strong className="text-red-800">{expired} expired</strong>,{" "}
           <strong className="text-amber-800">{belowPar} below par</strong>.
-          Suggestions only — there is no order button.
+          {user.role !== "tech" ? " Reorder notes a suggestion." : ""}
         </p>
       </div>
       <Suspense fallback={<p className="text-sm">Loading…</p>}>
@@ -99,6 +104,7 @@ export default async function StockPage({
           vendors={vendors.map((v) => ({ id: v.id, name: v.name }))}
           filters={{ locationId, vendorId, flag }}
           canDispose={canManageSettings(user)}
+          canReorder={user.role !== "tech"}
         />
       </Suspense>
     </div>

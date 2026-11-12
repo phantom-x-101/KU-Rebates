@@ -21,7 +21,7 @@ export function SettingsNav({ current }: { current: string }) {
             href={l.href}
             className={
               active
-                ? "rounded bg-slate-900 px-2.5 py-1 font-medium text-white"
+                ? "rounded bg-pc-teal px-2.5 py-1 font-medium text-white"
                 : "rounded px-2.5 py-1 text-slate-700 hover:bg-slate-200"
             }
           >

@@ -22,8 +22,8 @@ export default async function ExceptionsPage({
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Exception queue</h1>
         <p className="text-sm text-amber-800">
-          Exception queue is limited to <strong>supply_chain</strong> and{" "}
-          <strong>admin</strong>.
+          Exception queue is limited to <strong>supply chain</strong>,{" "}
+          <strong>category owner</strong>, and <strong>admin</strong>.
         </p>
         <Link href="/" className="text-sm underline">
           Back to home

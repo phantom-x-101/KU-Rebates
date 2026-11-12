@@ -34,6 +34,9 @@ describe("Phase 6 stock, expiry, reorder", () => {
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
@@ -42,9 +45,10 @@ describe("Phase 6 stock, expiry, reorder", () => {
 
   it("flags seeded EXPIRINGSOON1 as expiring soon", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const rows = await listStockView({}, new Date(), db);
     const soon = rows.find((r) => r.lot === "EXPIRINGSOON1");
@@ -55,9 +59,10 @@ describe("Phase 6 stock, expiry, reorder", () => {
 
   it("dispose expired removes lot from on-hand; expired_on_shelf exception created", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     // Seed an already-expired lot
     await db.insert(stockEvents).values({
@@ -106,9 +111,10 @@ describe("Phase 6 stock, expiry, reorder", () => {
 
   it("flags low-stock products vs par in reorder view (no order action)", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const rows = await listReorderView(db);
     // Terumo sheath par 4; seed on-hand for lot 0001681425 is 1 + EXPIRINGSOON1 is 1 = 2 at loc 1

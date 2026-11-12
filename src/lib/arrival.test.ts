@@ -31,6 +31,9 @@ describe("scan on arrival", () => {
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
@@ -39,9 +42,10 @@ describe("scan on arrival", () => {
 
   it("Terumo GS1 identifies product and fills lot/expiry; arrival updates on-hand", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const { parsed, product } = await identifyProduct(TERUMO_GS1_SAMPLE, db);
     expect(product?.catalogNumber).toBe("RSS802");
@@ -77,9 +81,10 @@ describe("scan on arrival", () => {
 
   it("Cardiva HIBC identifies product but requires manual lot/expiry; arrival updates on-hand", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const { parsed, product } = await identifyProduct(CARDIVA_HIBC_SAMPLE, db);
     expect(product?.catalogNumber).toBe("800-612C");

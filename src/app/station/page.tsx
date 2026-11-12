@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { ScanStation } from "@/components/ScanStation";
+import { isPreviewLab, loadCaseOpenOptions } from "@/lib/case-open";
 import { DEMO_LABELS, expiringLotBarcode } from "@/lib/demo-labels";
 import { CASE_ROLES } from "@/lib/cases";
+import { givenName } from "@/lib/display-name";
 import { getCurrentUser } from "@/lib/session";
 import { loadStationBoard } from "@/lib/station";
 
@@ -22,7 +24,7 @@ export default async function StationPage({
       <div className="space-y-3">
         <h1 className="text-3xl font-bold">Scan station</h1>
         <p className="text-lg text-amber-900">
-          Pick <strong>Alex Tech</strong> in the header. The station is for tech,
+          Pick <strong>Alex</strong> in the header. The station is for tech,
           supply chain, and admin.
         </p>
         <Link href="/" className="text-sm underline">
@@ -35,7 +37,10 @@ export default async function StationPage({
   const sp = await searchParams;
   const parsedCase = sp.case ? Number(sp.case) : null;
   const caseId = parsedCase && Number.isFinite(parsedCase) ? parsedCase : null;
-  const board = await loadStationBoard(caseId);
+  const [board, caseOptions] = await Promise.all([
+    loadStationBoard(caseId),
+    loadCaseOpenOptions(user.id),
+  ]);
   const expiring = board.stock.find((row) => row.lot === "EXPIRINGSOON1");
   const simulate = expiring?.expiry
     ? [
@@ -53,12 +58,17 @@ export default async function StationPage({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Scan station</h1>
-        <p className="text-sm text-slate-600">
-          {user.name} · {user.role}. Arrive stock, pull it for an EP case, then
-          use, waste, or return. The check is taken = used + wasted + returned.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Scan station</h1>
+          <p className="text-sm text-slate-600">
+            {givenName(user.name)} · {user.role}. Arrive stock, pull it for a case, then
+            return what comes back. The check is taken = returned.
+          </p>
+        </div>
+        <Link href="/demo/labels" className="text-sm font-semibold underline">
+          Large barcode sheet
+        </Link>
       </div>
       <ScanStation
         caseRow={
@@ -69,9 +79,11 @@ export default async function StationPage({
                 departmentName: board.caseRow.departmentName,
                 roomName: board.caseRow.roomName,
                 procedureTypeName: board.caseRow.procedureTypeName,
+                preview: isPreviewLab(board.caseRow.departmentPhase),
               }
             : null
         }
+        caseOptions={caseOptions}
         reconciliation={board.reconciliation}
         lines={board.lines}
         stock={board.stock}

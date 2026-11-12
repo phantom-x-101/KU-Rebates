@@ -61,6 +61,9 @@ describe("reconcileCase + gap exceptions", () => {
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
@@ -69,9 +72,10 @@ describe("reconcileCase + gap exceptions", () => {
 
   it("seeded EP case has a gap of 1 (extra sheath)", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const recon = await reconcileCase(1, db);
     expect(recon.taken).toBe(6);
@@ -89,9 +93,10 @@ describe("reconcileCase + gap exceptions", () => {
 
   it("closing a case with a gap creates taken_not_scanned_or_returned", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const c = await openCase(
       { departmentId: 1, roomId: 1, procedureTypeId: 1 },
@@ -189,9 +194,10 @@ describe("reconcileCase + gap exceptions", () => {
 
   it("resolving seeded gap writes audit; timeout creates gaps for stale open cases", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const openGaps = await listExceptions(
       { type: "taken_not_scanned_or_returned", status: "open" },

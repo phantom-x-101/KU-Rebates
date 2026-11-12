@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isPreviewLab } from "@/lib/case-open";
 import { CASE_ROLES, listCases } from "@/lib/cases";
 import { getCurrentUser } from "@/lib/session";
 
@@ -29,13 +30,13 @@ export default async function CasesPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Open a case, scan pulls, then close out used / wasted / returned. No
+            Open a case, pull items, then return what comes back. No
             patient identifiers.
           </p>
         </div>
         <Link
           href="/cases/new"
-          className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white"
+          className="rounded bg-pc-teal px-3 py-1.5 text-sm font-medium text-white"
         >
           Open case
         </Link>
@@ -44,8 +45,7 @@ export default async function CasesPage() {
         <thead>
           <tr className="border-b border-slate-300 text-slate-600">
             <th className="py-2 pr-3 font-medium">ID</th>
-            <th className="py-2 pr-3 font-medium">Department</th>
-            <th className="py-2 pr-3 font-medium">Room</th>
+            <th className="py-2 pr-3 font-medium">Lab · Room</th>
             <th className="py-2 pr-3 font-medium">Procedure</th>
             <th className="py-2 pr-3 font-medium">Status</th>
             <th className="py-2 font-medium">Opened</th>
@@ -59,8 +59,14 @@ export default async function CasesPage() {
                   {c.id}
                 </Link>
               </td>
-              <td className="py-2 pr-3">{c.departmentName}</td>
-              <td className="py-2 pr-3">{c.roomName ?? "—"}</td>
+              <td className="py-2 pr-3 font-medium">
+                {c.departmentName} · {c.roomName ?? "no room"}
+                {isPreviewLab(c.departmentPhase) ? (
+                  <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-amber-900">
+                    preview
+                  </span>
+                ) : null}
+              </td>
               <td className="py-2 pr-3">{c.procedureTypeName ?? "—"}</td>
               <td className="py-2 pr-3 font-medium">{c.status}</td>
               <td className="py-2 font-mono text-xs">{c.openedAt}</td>

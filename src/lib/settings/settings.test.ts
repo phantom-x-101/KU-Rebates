@@ -53,6 +53,9 @@ describe("settings create product + access", () => {
 
   afterEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = (globalThis as any).__kuDb as { sqlite?: { close: () => void } } | undefined;
+    held?.sqlite?.close();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = undefined;
     if (prevPath === undefined) delete process.env.KU_DB_PATH;
     else process.env.KU_DB_PATH = prevPath;
@@ -61,9 +64,10 @@ describe("settings create product + access", () => {
 
   it("adds a product with identifiers, access mode, par level, and audit rows", async () => {
     const { createDb } = await import("@/db");
-    const { db } = createDb(dbPath);
+    const created = createDb(dbPath);
+    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = { db, sqlite: undefined };
+    (globalThis as any).__kuDb = created;
 
     const product = await createProduct(
       {

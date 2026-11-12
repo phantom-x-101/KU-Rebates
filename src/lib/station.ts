@@ -12,11 +12,7 @@ import {
 import { identifyProduct, recordArrival } from "@/lib/arrival";
 import { CARDIVA_HIBC_SAMPLE, type ParsedBarcode } from "@/lib/barcode";
 import { getCase, listCasePullLines, openCase } from "@/lib/cases";
-import {
-  closeoutReturned,
-  closeoutUsed,
-  closeoutWasted,
-} from "@/lib/closeout";
+import { closeoutReturned } from "@/lib/closeout";
 import { recordPull } from "@/lib/pull";
 import { reconcileCase, type CaseReconciliation } from "@/lib/reconcile";
 import { createProduct } from "@/lib/settings/products";
@@ -24,7 +20,7 @@ import { upsertProductAccess } from "@/lib/settings/product-access";
 import { stockOnHand } from "@/lib/stock";
 import { listStockView, type StockViewRow } from "@/lib/stock-view";
 
-export type StationMode = "arrive" | "pull" | "use" | "waste" | "return";
+export type StationMode = "arrive" | "pull" | "return";
 
 export type StationItem = {
   productId: number;
@@ -91,8 +87,6 @@ export type StationOutcome =
 const HEADLINES: Record<StationMode, string> = {
   arrive: "Added to shelf",
   pull: "Pulled for case",
-  use: "Marked used",
-  waste: "Marked wasted",
   return: "Returned to shelf",
 };
 
@@ -281,7 +275,7 @@ export async function applyStationScan(
         ok: false,
         status: "error",
         code: "no_case",
-        message: "Open an EP case first",
+        message: "Open a case first",
         item: knownItem,
       };
     }
@@ -411,9 +405,7 @@ export async function applyStationScan(
         qty: 1,
         rawBarcode: raw,
       };
-      if (input.mode === "use") await closeoutUsed(payload, userId, db);
-      else if (input.mode === "waste") await closeoutWasted(payload, userId, db);
-      else await closeoutReturned(payload, userId, db);
+      await closeoutReturned(payload, userId, db);
     }
   } catch (error) {
     const message = errorText(error);

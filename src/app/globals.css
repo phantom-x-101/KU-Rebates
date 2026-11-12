@@ -1,13 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
+  --background: #e7eef5;
+  --foreground: #16323c;
+  --pc-teal: #0c4e5c;
+  --pc-teal-2: #146578;
+  --pc-blue: #2f93c7;
+  --pc-cream: #f6f1c4;
+  --pc-line: #d5e0ea;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-pc-teal: var(--pc-teal);
+  --color-pc-teal-2: var(--pc-teal-2);
+  --color-pc-blue: var(--pc-blue);
+  --color-pc-bg: var(--background);
   --font-sans: var(--font-source-sans);
 }
 
@@ -19,4 +28,89 @@ body {
 
 code {
   font-size: 0.9em;
+}
+
+button.bg-pc-teal:hover:not(:disabled) {
+  background-color: var(--pc-teal-2);
+}
+
+main a:not(.text-white) {
+  color: #0e5f78;
+}
+
+main table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid var(--pc-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+main table thead th {
+  background: var(--pc-cream);
+  color: #3e4c57;
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+main table thead th:first-child,
+main table tbody td:first-child {
+  padding-left: 0.85rem;
+}
+
+main table tbody tr {
+  background: #fff;
+}
+
+main table tbody tr + tr td {
+  border-top: 1px solid #e6eef4;
+}
+
+main table thead th:first-child {
+  border-top-left-radius: 12px;
+}
+
+main table thead th:last-child {
+  border-top-right-radius: 12px;
+}
+
+main :is(.rounded-xl, .rounded-lg).border.bg-white {
+  border-color: var(--pc-line);
+  box-shadow: 0 1px 2px rgba(12, 78, 92, 0.06);
+}
+
+.demo-barcode {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #fff;
+}
+
+@media print {
+  @page {
+    margin: 0.4in;
+  }
+
+  html,
+  body,
+  body > div,
+  body > div > div,
+  body > div > div > div,
+  body > div > div > div > div {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  header,
+  aside,
+  footer,
+  nav {
+    display: none !important;
+  }
 }

@@ -4,7 +4,11 @@ import { getDb, type AppDb } from "@/db";
 import { exceptions, products, users, vendors } from "@/db/schema";
 import { audit } from "@/lib/audit";
 
-export const EXCEPTION_QUEUE_ROLES = ["supply_chain", "admin"] as const;
+export const EXCEPTION_QUEUE_ROLES = [
+  "supply_chain",
+  "admin",
+  "category_owner",
+] as const;
 
 export function canAccessExceptionQueue(
   user: { role: string; active?: number | boolean | null } | null | undefined,
@@ -19,7 +23,9 @@ export function assertCanAccessExceptionQueue(
   user: { role: string; active?: number | boolean | null } | null | undefined,
 ) {
   if (!canAccessExceptionQueue(user)) {
-    throw new Error("Exception queue requires supply_chain or admin");
+    throw new Error(
+      "Exception queue requires supply_chain, category_owner, or admin",
+    );
   }
   return user!;
 }

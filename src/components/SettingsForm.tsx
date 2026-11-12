@@ -22,7 +22,7 @@ export function SettingsForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+        className="rounded bg-pc-teal px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
       >
         {pending ? "Saving…" : submitLabel}
       </button>

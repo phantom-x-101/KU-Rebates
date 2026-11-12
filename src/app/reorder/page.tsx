@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { canManageSettings } from "@/lib/settings";
+import { ReorderButton } from "@/components/ReorderButton";
 import { getCurrentUser } from "@/lib/session";
 import { listReorderView } from "@/lib/reorder";
 
@@ -7,13 +7,16 @@ export const dynamic = "force-dynamic";
 
 export default async function ReorderPage() {
   const user = await getCurrentUser();
-  if (!canManageSettings(user)) {
+  const allowed =
+    user &&
+    user.active &&
+    ["supply_chain", "admin", "vendor_rep"].includes(user.role);
+  if (!allowed) {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Reorder view</h1>
         <p className="text-sm text-amber-800">
-          Reorder suggestions are for <strong>supply_chain</strong> and{" "}
-          <strong>admin</strong>.
+          Reorder suggestions are for supply chain, admin, and the vendor rep.
         </p>
         <Link href="/" className="text-sm underline">
           Back to home
@@ -22,7 +25,9 @@ export default async function ReorderPage() {
     );
   }
 
-  const rows = await listReorderView();
+  const rows = (await listReorderView()).filter((row) =>
+    user.role === "vendor_rep" ? row.vendorId === user.vendorId : true,
+  );
   const low = rows.filter((r) => r.lowStock).length;
 
   return (
@@ -30,8 +35,7 @@ export default async function ReorderPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Reorder view</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Par level vs on-hand. Suggestions only — KU places orders; Pycube never
-          does. There is no order button.
+          Par level vs on-hand. Reorder notes a suggestion. This prototype does not place the order.
         </p>
         <p className="mt-1 text-sm">
           <strong className="text-amber-800">{low} low-stock</strong> item
@@ -48,7 +52,8 @@ export default async function ReorderPage() {
               <th className="py-2 pr-3 font-medium">Par</th>
               <th className="py-2 pr-3 font-medium">On hand</th>
               <th className="py-2 pr-3 font-medium">Flag</th>
-              <th className="py-2 font-medium">Suggestion</th>
+              <th className="py-2 pr-3 font-medium">Suggestion</th>
+              <th className="py-2 font-medium">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -72,7 +77,10 @@ export default async function ReorderPage() {
                     <span className="text-slate-600">OK</span>
                   )}
                 </td>
-                <td className="py-2 text-slate-700">{r.suggestion}</td>
+                <td className="py-2 pr-3 text-slate-700">{r.suggestion}</td>
+                <td className="py-2">
+                  {r.lowStock ? <ReorderButton productId={r.productId} /> : null}
+                </td>
               </tr>
             ))}
           </tbody>

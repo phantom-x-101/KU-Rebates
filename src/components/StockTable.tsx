@@ -7,6 +7,7 @@ import {
   scanExpiredOnShelfAction,
   type StockActionState,
 } from "@/app/stock/actions";
+import { ReorderButton } from "@/components/ReorderButton";
 import type { StockViewRow } from "@/lib/stock-view";
 
 type StockTableRow = StockViewRow & {
@@ -53,15 +54,18 @@ export function StockTable({
   vendors,
   filters,
   canDispose,
+  canReorder,
 }: {
   rows: StockTableRow[];
   locations: Loc[];
   vendors: Vendor[];
   filters: { locationId: string; vendorId: string; flag: string };
   canDispose: boolean;
+  canReorder: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const showActions = canReorder || canDispose;
   const [scanMsg, setScanMsg] = useState("");
   const [, start] = useTransition();
 
@@ -149,8 +153,8 @@ export function StockTable({
               <th className="py-2 pr-3 font-medium">On hand</th>
               <th className="py-2 pr-3 font-medium">Par</th>
               <th className="py-2 pr-3 font-medium">Flag</th>
-              <th className="py-2 pr-3 font-medium">Reorder suggestion</th>
-              <th className="py-2 font-medium">Action</th>
+              <th className="py-2 pr-3 font-medium">Suggestion</th>
+              {showActions ? <th className="py-2 font-medium">Action</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -193,14 +197,21 @@ export function StockTable({
                   </div>
                 </td>
                 <td className="max-w-xs py-2 pr-3 text-slate-700">{r.suggestion}</td>
-                <td className="py-2">
-                  {canDispose ? <DisposeButton row={r} /> : null}
-                </td>
+                {showActions ? (
+                  <td className="py-2">
+                    <div className="flex flex-col items-start gap-1">
+                      {canReorder && r.lowStock ? (
+                        <ReorderButton productId={r.productId} />
+                      ) : null}
+                      {canDispose ? <DisposeButton row={r} /> : null}
+                    </div>
+                  </td>
+                ) : null}
               </tr>
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-3 text-slate-500">
+                <td colSpan={showActions ? 9 : 8} className="py-3 text-slate-500">
                   No stock rows match these filters.
                 </td>
               </tr>
