@@ -331,6 +331,3 @@ export const EXTRA_PRODUCTS: CatalogItem[] = [
 
 /** The one catalog item that is bought for a case and not kept as shelf stock. */
 export const BROUGHT_IN_PRODUCT_ID = 3;
-
-/** Printed on the label sheet. No contract line points at this product. */
-export const NO_CONTRACT_PRODUCT_ID = 22;

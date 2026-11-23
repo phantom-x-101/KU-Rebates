@@ -32,7 +32,7 @@ Footer on every page: *Demo data. Vendor X and Vendor C are placeholders.*
 | 1 | Scaffold, Drizzle/SQLite, seed, user picker, `audit()` |
 | 2 | Settings (vendors, products, locations, access, expiry rules) |
 | 3 | Scan on arrival + barcode parser (GS1 / HIBC) |
-| 4 | Cases, pull scans, close-out (used / wasted / returned) |
+| 4 | Cases, pull scans, close-out (returned; anything not returned counts as used) |
 | 5 | Reconcile check + exception queue |
 | 6 | Stock view, expiry flags, reorder suggestions (no order button) |
 | 7 | Vendor portal (own vendor only) |

@@ -47,7 +47,8 @@ describe("demo reset", () => {
     const rows = await stockOnHand({}, created.db);
     const byLot = Object.fromEntries(rows.map((row) => [`${row.productId}|${row.lot}`, row.onHand]));
     expect(byLot["1|0001681425"]).toBe(1);
-    expect(byLot["2|EXPIRED-SHELF"]).toBe(1);
-    expect(byLot["1|EXPIRINGSOON1"]).toBe(1);
+    expect(byLot["4|EXPIRED-SHELF"]).toBe(1);
+    expect(byLot["4|EXPIRINGSOON1"]).toBe(1);
+    expect(byLot["25|0001476667"]).toBe(2);
   });
 });

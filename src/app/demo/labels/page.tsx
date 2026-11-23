@@ -22,8 +22,8 @@ export default async function LabelSheetPage() {
         ...labels,
         {
           id: "expiring",
-          title: "Expiring Terumo lot — not on the seeded case",
-          caption: `RSS802 · lot EXPIRINGSOON1 · exp ${expiring.expiry}`,
+          title: "Expiring Vendor C mapping lot (placeholder)",
+          caption: `VC-MAP-01 · lot EXPIRINGSOON1 · exp ${expiring.expiry}`,
           barcode: expiringLotBarcode(expiring.expiry),
           symbology: "gs1-128",
           note: "Already on the shelf. Use it to show an item that is not on your new case.",
@@ -40,7 +40,7 @@ export default async function LabelSheetPage() {
       return {
         ...label,
         symbol,
-        src: await barcodeDataUrl(symbol),
+        src: await barcodeDataUrl(symbol, label.symbology),
       };
     }),
   );
@@ -58,10 +58,13 @@ export default async function LabelSheetPage() {
         <div>
           <h1 className="text-3xl font-bold">Demo labels</h1>
           <p className="mt-1 max-w-2xl text-slate-700">
-            One large code per label. Hold the scanner a few inches from the bars.
-            The line under each code is exactly what a scan types into the station.
-            In-stock items can be arrived, pulled, and returned. The sheet also
-            has an expired code, an unknown code, and one item with no contract.
+            The first labels copy the real packages: each has an item code, then a
+            separate lot-and-expiry code. Scan the item first, then its lot label.
+            Cardiva labels are Code 39 HIBC. The line under each code is exactly
+            what a scan types into the station. The DECA cable pack is
+            hospital-owned and on no contract. Placeholder items follow, with an
+            expired code and an unknown code. Real digits were read from photos:
+            scan the real package once and compare.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

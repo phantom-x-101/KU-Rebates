@@ -9,12 +9,14 @@ const STEPS = [
   {
     n: "1",
     title: "Arrive",
-    detail: "Scan five deliveries onto the shelf.",
+    detail:
+      "Scan the real packages: Terumo 8 Fr and 11 Fr, Cardiva Vascade, NuVision NAV. Scan the item barcode, then its lot-and-expiry barcode. Check the Read line against the label.",
   },
   {
     n: "2",
     title: "Pull",
-    detail: "Open an EP case and scan those items out.",
+    detail:
+      "Open an EP case and scan those items out. Item barcode, then lot barcode; or pick the lot from the list.",
   },
   {
     n: "3",
@@ -24,22 +26,25 @@ const STEPS = [
   {
     n: "4",
     title: "Check",
-    detail: "Taken must equal returned.",
+    detail: "Close the case. Anything not returned counts as used.",
   },
   {
     n: "5",
     title: "Problems",
-    detail: "Leave one item out. The gap lands in Exceptions.",
+    detail:
+      "Scan the DECA cable pack: it is hospital-owned and opens \"Not on any contract\". Scan an unknown barcode too. Both land in Exceptions with the case left open too long and the placeholder expired lots.",
   },
   {
     n: "6",
     title: "Vendor view",
-    detail: "As Terry Terumo Rep, only Terumo stock is visible.",
+    detail:
+      "As Terry Terumo Rep, only Terumo stock is visible. Pat sees only Cardiva, Nico only NuVision.",
   },
   {
     n: "7",
     title: "Reorder",
-    detail: "Low stock shows a suggestion. This prototype does not place the order.",
+    detail:
+      "Low stock shows a suggestion (Terumo 8 Fr and Cardiva are below par). This prototype does not place the order.",
   },
 ];
 

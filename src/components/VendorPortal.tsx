@@ -167,8 +167,8 @@ export function VendorPortal({
           </div>
         </div>
         <p className="text-xs text-slate-500">
-          Case shown as date, room, and procedure type only — no patient
-          identifiers.
+          Closed cases only: anything pulled and not returned counts as used.
+          Case shown as date, room, and procedure type — no patient identifiers.
         </p>
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-left text-sm">

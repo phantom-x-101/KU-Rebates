@@ -11,6 +11,7 @@ import {
 import { openOrResumeCase } from "@/lib/case-open";
 import { closeoutReturned } from "@/lib/closeout";
 import { lookupForPull, recordPull } from "@/lib/pull";
+import { reconcileCase } from "@/lib/reconcile";
 import { getCurrentUser } from "@/lib/session";
 
 export type CaseActionState = {
@@ -92,10 +93,14 @@ export async function closeCaseAction(caseId: number): Promise<CaseActionState> 
   try {
     const user = await requireCaseUser();
     await closeCase(caseId, user.id);
+    const summary = await reconcileCase(caseId);
     revalidatePath("/cases");
     revalidatePath(`/cases/${caseId}`);
     revalidatePath("/");
-    return { ok: true, message: `Case ${caseId} closed` };
+    return {
+      ok: true,
+      message: `Case ${caseId} closed. Used (not returned): ${summary.used} · Returned: ${summary.returned}`,
+    };
   } catch (e) {
     return {
       ok: false,
@@ -105,8 +110,10 @@ export async function closeCaseAction(caseId: number): Promise<CaseActionState> 
 }
 
 export async function lookupPullBarcodeAction(rawBarcode: string) {
-  await requireCaseUser();
-  return lookupForPull(rawBarcode);
+  const user = await requireCaseUser();
+  const result = await lookupForPull(rawBarcode, user.id);
+  if (!result.product) revalidatePath("/exceptions");
+  return result;
 }
 
 export async function recordPullAction(

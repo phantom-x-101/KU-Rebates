@@ -10,14 +10,26 @@ import {
   vendors,
 } from "@/db/schema";
 import { identifyProduct, recordArrival } from "@/lib/arrival";
-import { CARDIVA_HIBC_SAMPLE, type ParsedBarcode } from "@/lib/barcode";
+import {
+  describeScan,
+  isLotExpiryOnly,
+  pairLotScan,
+  parseBarcode,
+  type ParsedBarcode,
+} from "@/lib/barcode";
 import { getCase, listCasePullLines, openCase } from "@/lib/cases";
 import { closeoutReturned } from "@/lib/closeout";
+import {
+  productOnAnyContract,
+  recordUnmappedBarcode,
+  resolveUnmappedBarcode,
+} from "@/lib/exceptions";
 import { recordPull } from "@/lib/pull";
+import { REAL_PRODUCTS } from "@/lib/real-products";
 import { reconcileCase, type CaseReconciliation } from "@/lib/reconcile";
 import { createProduct } from "@/lib/settings/products";
 import { upsertProductAccess } from "@/lib/settings/product-access";
-import { stockOnHand } from "@/lib/stock";
+import { listPullableLots, stockOnHand, type PullableLot } from "@/lib/stock";
 import { listStockView, type StockViewRow } from "@/lib/stock-view";
 
 export type StationMode = "arrive" | "pull" | "return";
@@ -27,6 +39,7 @@ export type StationItem = {
   catalogNumber: string;
   description: string;
   vendorName: string;
+  hospitalOwned: boolean;
   lot: string | null;
   expiry: string | null;
   qty: number;
@@ -38,6 +51,10 @@ export type StationSuccess = {
   headline: string;
   mode: StationMode;
   item: StationItem;
+  /** Shown under the result, e.g. the product is on no contract. */
+  notice: string | null;
+  /** What each barcode decoded to, for checking against the printed label. */
+  reads: string[];
 };
 
 export type StationNeedsLot = {
@@ -50,9 +67,16 @@ export type StationNeedsLot = {
     catalogNumber: string;
     description: string;
     vendorName: string;
+    hospitalOwned: boolean;
   };
   suggestedLot: string;
   suggestedExpiry: string;
+  reads: string[];
+  /**
+   * Fallback when no lot label is scanned. Pull: lots on hand, earliest expiry
+   * first. Return: lots still out on this case.
+   */
+  lots: PullableLot[];
 };
 
 export type StationUnknown = {
@@ -68,6 +92,7 @@ export type StationErrorCode =
   | "duplicate"
   | "no_case"
   | "not_on_shelf"
+  | "no_item"
   | "other";
 
 export type StationError = {
@@ -90,9 +115,14 @@ const HEADLINES: Record<StationMode, string> = {
   return: "Returned to shelf",
 };
 
+/** Prefill for typed lot entry, keyed by catalog number: the lot printed on each package. */
 const LOT_HINTS: Record<string, { lot: string; expiry: string }> = {
-  [CARDIVA_HIBC_SAMPLE]: { lot: "G612C260420B", expiry: "2028-04-09" },
-  "800-612C": { lot: "G612C260420B", expiry: "2028-04-09" },
+  ...Object.fromEntries(
+    REAL_PRODUCTS.map((item) => [
+      item.catalogNumber,
+      { lot: item.lot, expiry: item.expiry },
+    ]),
+  ),
   "VC-ABL-01": { lot: "VCABL1001", expiry: "2027-06-01" },
   "VC-MAP-01": { lot: "VCMAP2001", expiry: "2027-08-15" },
 };
@@ -120,6 +150,7 @@ function itemFrom(
     catalogNumber: string;
     description: string;
     vendorName: string;
+    hospitalOwned: boolean;
   },
   lot: string | null,
   expiry: string | null,
@@ -130,6 +161,7 @@ function itemFrom(
     catalogNumber: product.catalogNumber,
     description: product.description,
     vendorName: product.vendorName,
+    hospitalOwned: product.hospitalOwned,
     lot,
     expiry,
     qty,
@@ -207,6 +239,9 @@ export async function applyStationScan(
     caseId?: number | null;
     lot?: string | null;
     expiry?: string | null;
+    /** Product barcode scanned just before, still waiting for its lot and expiry. */
+    pendingRaw?: string | null;
+    lotSource?: "barcode" | "manual";
   },
   userId: number,
   db: AppDb = getDb(),
@@ -222,8 +257,49 @@ export async function applyStationScan(
     };
   }
 
+  const scanned = parseBarcode(raw);
+  if (isLotExpiryOnly(scanned)) {
+    const pendingRaw = cleanRaw(input.pendingRaw ?? "");
+    if (!pendingRaw) {
+      return {
+        ok: false,
+        status: "error",
+        code: "no_item",
+        message: "Scan the item barcode first. This label has only lot and expiry.",
+        item: null,
+      };
+    }
+    const pair = pairLotScan(pendingRaw, scanned);
+    if (!pair.ok) {
+      return {
+        ok: false,
+        status: "error",
+        code: "no_item",
+        message: pair.message,
+        item: null,
+      };
+    }
+    const outcome = await applyStationScan(
+      {
+        mode: input.mode,
+        rawBarcode: pendingRaw,
+        caseId: input.caseId,
+        lot: pair.lot ?? input.lot,
+        expiry: pair.expiry ?? input.expiry,
+        lotSource: pair.lot && pair.expiry ? "barcode" : "manual",
+      },
+      userId,
+      db,
+    );
+    if (outcome.status === "success" || outcome.status === "needs_lot") {
+      outcome.reads = [...outcome.reads, describeScan(scanned)];
+    }
+    return outcome;
+  }
+
   const { parsed, product } = await identifyProduct(raw, db);
   if (!product) {
+    await recordUnmappedBarcode(raw, "station", userId, db);
     return {
       ok: false,
       status: "unknown",
@@ -235,25 +311,76 @@ export async function applyStationScan(
   const lot = (input.lot?.trim() || parsed.lot || "").trim();
   const expiry = (input.expiry?.trim() || parsed.expiry || "").trim();
   if (!lot || !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) {
+    const productInfo = {
+      productId: product.productId,
+      catalogNumber: product.catalogNumber,
+      description: product.description,
+      vendorName: product.vendorName,
+      hospitalOwned: product.hospitalOwned,
+    };
+    if (input.mode === "pull") {
+      const lots = await listPullableLots(product.productId, new Date(), db);
+      if (lots.length === 0) {
+        return {
+          ok: false,
+          status: "error",
+          code: "not_on_shelf",
+          message: "Nothing on the shelf for this product. Arrive it first.",
+          item: itemFrom(productInfo, null, null),
+        };
+      }
+      return {
+        ok: false,
+        status: "needs_lot",
+        message: "Scan the lot and expiry barcode, or pick the lot. Earliest expiry is first.",
+        raw,
+        product: productInfo,
+        reads: [describeScan(parsed)],
+        suggestedLot: lots[0]!.lot,
+        suggestedExpiry: lots[0]!.expiry,
+        lots,
+      };
+    }
+    if (input.mode === "return" && input.caseId) {
+      const out = (await listCasePullLines(input.caseId, db)).filter(
+        (line) =>
+          line.productId === product.productId &&
+          line.remaining > 0 &&
+          line.lot &&
+          line.expiry,
+      );
+      if (out.length > 0) {
+        return {
+          ok: false,
+          status: "needs_lot",
+          message: "Scan the lot and expiry barcode, or pick the lot coming back.",
+          raw,
+          product: productInfo,
+          reads: [describeScan(parsed)],
+          suggestedLot: out[0]!.lot!,
+          suggestedExpiry: out[0]!.expiry!,
+          lots: out.map((line) => ({
+            lot: line.lot!,
+            expiry: line.expiry!,
+            locationId: line.locationId,
+            onHand: line.remaining,
+          })),
+        };
+      }
+    }
     const hint = lotHint(raw, parsed, product.catalogNumber);
     return {
       ok: false,
       status: "needs_lot",
-      message:
-        parsed.format === "hibc"
-          ? "HIBC carries the item only. Enter lot and expiry."
-          : "Lot and expiry are not in this barcode. Enter them.",
+      message: "Scan the lot and expiry barcode, or enter them.",
       raw,
-      product: {
-        productId: product.productId,
-        catalogNumber: product.catalogNumber,
-        description: product.description,
-        vendorName: product.vendorName,
-      },
+      product: productInfo,
+      reads: [describeScan(parsed)],
       suggestedLot: lot || hint.lot,
       suggestedExpiry: /^\d{4}-\d{2}-\d{2}$/.test(expiry)
         ? expiry
         : hint.expiry,
+      lots: [],
     };
   }
 
@@ -300,7 +427,8 @@ export async function applyStationScan(
     }
   }
 
-  const lotSource = parsed.lot && parsed.expiry ? "barcode" : "manual";
+  const lotSource =
+    input.lotSource ?? (parsed.lot && parsed.expiry ? "barcode" : "manual");
 
   try {
     if (input.mode === "arrive") {
@@ -436,12 +564,18 @@ export async function applyStationScan(
     };
   }
 
+  const onContract = await productOnAnyContract(product.productId, db);
   return {
     ok: true,
     status: "success",
     headline: HEADLINES[input.mode],
     mode: input.mode,
     item: knownItem,
+    reads: [describeScan(parsed)],
+    notice:
+      onContract || input.mode === "return"
+        ? null
+        : "Not on any contract. Listed in Exceptions for review.",
   };
 }
 
@@ -477,6 +611,7 @@ export async function addStationProduct(
     userId,
     db,
   );
+  await resolveUnmappedBarcode(raw, product.id, userId, db);
 
   const [dept] = await db
     .select()

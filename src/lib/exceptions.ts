@@ -1,8 +1,16 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, type AppDb } from "@/db";
-import { exceptions, products, users, vendors } from "@/db/schema";
+import {
+  auditLog,
+  contractLineProducts,
+  exceptions,
+  products,
+  users,
+  vendors,
+} from "@/db/schema";
 import { audit } from "@/lib/audit";
+import { CASE_TIMEOUT_ACTION, caseIdFromDetail } from "@/lib/reconcile";
 
 export const EXCEPTION_QUEUE_ROLES = [
   "supply_chain",
@@ -31,14 +39,156 @@ export function assertCanAccessExceptionQueue(
 }
 
 export const exceptionTypeSchema = z.enum([
-  "not_on_any_contract",
-  "bill_only_unmapped",
-  "missing_from_item_master",
-  "opened_or_wasted",
-  "taken_not_scanned_or_returned",
+  "case_open_past_timeout",
   "expired_on_shelf",
-  "closeout_exceeds_taken",
+  "bill_only_unmapped",
+  "not_on_any_contract",
+  "missing_from_item_master",
 ]);
+
+export const UNMAPPED_ACTION = "create_unmapped";
+
+export type UnmappedSource = "station" | "arrival" | "pull";
+
+function barcodeFromDetail(detail: string | null): string | null {
+  if (!detail) return null;
+  const at = detail.indexOf("barcode=");
+  return at < 0 ? null : detail.slice(at + "barcode=".length);
+}
+
+async function unresolvedUnmapped(raw: string, db: AppDb) {
+  const rows = await db
+    .select({ id: exceptions.id, detail: auditLog.detail })
+    .from(exceptions)
+    .innerJoin(
+      auditLog,
+      and(
+        eq(auditLog.entity, "exceptions"),
+        eq(auditLog.entityId, exceptions.id),
+        eq(auditLog.action, UNMAPPED_ACTION),
+      ),
+    )
+    .where(
+      and(
+        eq(exceptions.type, "bill_only_unmapped"),
+        ne(exceptions.status, "resolved"),
+      ),
+    );
+  return rows.filter((row) => barcodeFromDetail(row.detail) === raw);
+}
+
+/** One open `bill_only_unmapped` exception per unknown barcode. */
+export async function recordUnmappedBarcode(
+  rawBarcode: string,
+  source: UnmappedSource,
+  userId: number | null,
+  db: AppDb = getDb(),
+) {
+  const raw = rawBarcode.trim();
+  if (!raw) return null;
+  const [existing] = await unresolvedUnmapped(raw, db);
+  if (existing) return { id: existing.id, created: false };
+
+  const [row] = await db
+    .insert(exceptions)
+    .values({
+      sourceContainer: 1,
+      type: "bill_only_unmapped",
+      productId: null,
+      status: "open",
+      ownerUserId: null,
+    })
+    .returning();
+  await audit(
+    {
+      userId,
+      container: 1,
+      entity: "exceptions",
+      entityId: row.id,
+      action: UNMAPPED_ACTION,
+      detail: `via=${source} barcode=${raw}`,
+    },
+    db,
+  );
+  return { id: row.id, created: true };
+}
+
+export const NOT_ON_CONTRACT_ACTION = "create_not_on_any_contract";
+
+export async function productOnAnyContract(productId: number, db: AppDb = getDb()) {
+  const [row] = await db
+    .select({ productId: contractLineProducts.productId })
+    .from(contractLineProducts)
+    .where(eq(contractLineProducts.productId, productId))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** One open `not_on_any_contract` exception per product scanned with no contract line. */
+export async function flagNotOnAnyContract(
+  productId: number,
+  via: "arrival" | "pull",
+  userId: number | null,
+  db: AppDb = getDb(),
+) {
+  if (await productOnAnyContract(productId, db)) return null;
+  const [existing] = await db
+    .select({ id: exceptions.id })
+    .from(exceptions)
+    .where(
+      and(
+        eq(exceptions.type, "not_on_any_contract"),
+        eq(exceptions.productId, productId),
+        ne(exceptions.status, "resolved"),
+      ),
+    )
+    .limit(1);
+  if (existing) return { id: existing.id, created: false };
+
+  const [row] = await db
+    .insert(exceptions)
+    .values({
+      sourceContainer: 1,
+      type: "not_on_any_contract",
+      productId,
+      status: "open",
+      ownerUserId: null,
+    })
+    .returning();
+  await audit(
+    {
+      userId,
+      container: 1,
+      entity: "exceptions",
+      entityId: row.id,
+      action: NOT_ON_CONTRACT_ACTION,
+      detail: `via=${via} product=${productId}`,
+    },
+    db,
+  );
+  return { id: row.id, created: true };
+}
+
+/** Resolve open unmapped-barcode exceptions once the barcode maps to a product. */
+export async function resolveUnmappedBarcode(
+  rawBarcode: string,
+  productId: number,
+  userId: number,
+  db: AppDb = getDb(),
+) {
+  const open = await unresolvedUnmapped(rawBarcode.trim(), db);
+  for (const row of open) {
+    await resolveException(
+      {
+        exceptionId: row.id,
+        resolutionNote: `Barcode mapped to product ${productId}`,
+      },
+      userId,
+      db,
+    );
+  }
+  return open.map((row) => row.id);
+}
 
 export async function listExceptions(
   filters: {
@@ -55,7 +205,7 @@ export async function listExceptions(
   }
   if (filters.status) conditions.push(eq(exceptions.status, filters.status));
 
-  return db
+  const rows = await db
     .select({
       id: exceptions.id,
       sourceContainer: exceptions.sourceContainer,
@@ -78,6 +228,32 @@ export async function listExceptions(
     .leftJoin(users, eq(exceptions.ownerUserId, users.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(exceptions.id));
+
+  const ids = rows
+    .filter((r) => r.type === "case_open_past_timeout" || r.type === "bill_only_unmapped")
+    .map((r) => r.id);
+  const details = ids.length
+    ? await db
+        .select({ entityId: auditLog.entityId, detail: auditLog.detail })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.entity, "exceptions"),
+            inArray(auditLog.entityId, ids),
+            inArray(auditLog.action, [CASE_TIMEOUT_ACTION, UNMAPPED_ACTION]),
+          ),
+        )
+    : [];
+  const detailById = new Map(details.map((d) => [d.entityId, d.detail]));
+
+  return rows.map((r) => {
+    const detail = detailById.get(r.id) ?? null;
+    return {
+      ...r,
+      caseId: r.type === "case_open_past_timeout" ? caseIdFromDetail(detail) : null,
+      barcode: r.type === "bill_only_unmapped" ? barcodeFromDetail(detail) : null,
+    };
+  });
 }
 
 export const assignOwnerSchema = z.object({

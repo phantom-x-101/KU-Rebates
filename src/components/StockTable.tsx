@@ -164,8 +164,10 @@ export function StockTable({
                 className="border-b border-slate-200 align-top"
               >
                 <td className="py-2 pr-3">
-                  {r.vendorName}{" "}
-                  <span className="font-mono text-xs">{r.catalogNumber}</span>
+                  <div>{r.description}</div>
+                  <div className="font-mono text-xs text-slate-500">
+                    {r.vendorName} · {r.catalogNumber}
+                  </div>
                 </td>
                 <td className="py-2 pr-3">{r.locationName ?? "—"}</td>
                 <td className="py-2 pr-3 font-mono text-xs">{r.lot ?? "—"}</td>

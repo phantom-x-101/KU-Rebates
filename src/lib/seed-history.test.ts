@@ -55,9 +55,12 @@ describe("busy EP lab seed", () => {
       onHand.map((row) => [`${row.productId}|${row.lot}`, row.onHand]),
     );
     expect(byKey["1|0001681425"]).toBe(1);
-    expect(byKey["1|EXPIRINGSOON1"]).toBe(1);
-    expect(byKey["2|EXPIRED-SHELF"]).toBe(1);
+    expect(byKey["4|EXPIRINGSOON1"]).toBe(1);
+    expect(byKey["4|EXPIRED-SHELF"]).toBe(1);
     expect(byKey["2|G612C260420B"]).toBe(1);
+    expect(byKey["25|0001476667"]).toBe(2);
+    expect(byKey["26|31982149L"]).toBe(1);
+    expect(byKey["27|SPD-PLACEHOLDER-1"]).toBe(1);
     expect(byKey["3|VCABL1001"]).toBe(1);
     expect(byKey["4|VCMAP2001"]).toBe(1);
     expect(byKey["4|VCMAP2002"]).toBe(2);
@@ -71,42 +74,55 @@ describe("busy EP lab seed", () => {
     expect(caseRows.length).toBeGreaterThanOrEqual(40);
     expect(caseRows.filter((row) => row.openedAt.startsWith(today))).toHaveLength(0);
     expect(caseRows.filter((row) => row.status === "aborted")).toHaveLength(2);
+    const openRows = caseRows.filter((row) => row.status === "open");
+    expect(openRows).toHaveLength(1);
+    expect(openRows[0]).toMatchObject({ departmentId: 2, roomId: 3 });
     expect(
-      caseRows.every(
-        (row) =>
-          row.departmentId === 1 &&
-          (row.roomId === 1 || row.roomId === 2) &&
-          row.procedureTypeId != null,
-      ),
+      caseRows
+        .filter((row) => row.status !== "open")
+        .every(
+          (row) =>
+            row.departmentId === 1 &&
+            (row.roomId === 1 || row.roomId === 2) &&
+            row.procedureTypeId != null,
+        ),
     ).toBe(true);
 
     const excRows = await db.select().from(exceptions);
     const ofType = (type: string) => excRows.filter((row) => row.type === type).length;
-    expect(ofType("taken_not_scanned_or_returned")).toBe(3);
-    expect(ofType("opened_or_wasted")).toBe(4);
     expect(ofType("expired_on_shelf")).toBe(2);
+    expect(ofType("case_open_past_timeout")).toBe(1);
+    expect(ofType("bill_only_unmapped")).toBe(1);
+    expect(excRows).toHaveLength(4);
 
-    const wasted = await db.select().from(scans);
-    expect(wasted.filter((row) => row.status === "wasted")).toHaveLength(4);
+    const scanRows = await db.select().from(scans);
+    expect(scanRows.filter((row) => row.status === "wasted")).toHaveLength(0);
 
     const access = await db.select().from(productAccess);
     expect(access.filter((row) => row.accessMode === "brought_in_for_case")).toHaveLength(1);
     expect(access.filter((row) => row.accessMode === "not_kept_in_stock")).toHaveLength(1);
 
     const links = await db.select().from(contractLineProducts);
-    expect(links.some((row) => row.productId === 22)).toBe(false);
-    expect(links.some((row) => row.productId === 1)).toBe(true);
+    const linked = new Set(links.map((row) => row.productId));
+    expect(linked.has(27)).toBe(false);
+    for (const id of [1, 2, 22, 25, 26]) expect(linked.has(id)).toBe(true);
 
     const catalog = await db.select().from(products);
-    expect(catalog.length).toBeGreaterThanOrEqual(24);
-    expect(catalog.find((row) => row.id === 1)?.description).toBe(
-      "Terumo Pinnacle sheath 8 Fr",
-    );
-    expect(catalog.find((row) => row.id === 2)?.description).toBe(
-      "Cardiva Vascade MVP closure",
+    expect(catalog.length).toBeGreaterThanOrEqual(27);
+    const real = new Map(
+      [
+        [1, "Terumo Pinnacle Introducer Sheath 8 Fr"],
+        [2, "Cardiva Vascade MVP closure"],
+        [25, "Terumo Pinnacle Introducer Sheath 11 Fr"],
+        [26, "NuVision NAV Ultrasound Catheter"],
+        [27, "Pack EP Lab SMALL DECA Cable"],
+      ] as const,
     );
     for (const row of catalog) {
-      if (row.id > 2) expect(row.description.toLowerCase()).toContain("placeholder");
+      const name = real.get(row.id as 1 | 2 | 25 | 26 | 27);
+      if (name) expect(row.description).toBe(name);
+      else expect(row.description.toLowerCase()).toContain("placeholder");
+      expect(row.kuOwned).toBe(row.id === 27 ? 1 : 0);
     }
 
     const low = (await listReorderView(db))

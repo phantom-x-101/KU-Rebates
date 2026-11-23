@@ -18,8 +18,6 @@ export type PullLine = {
   vendorName: string;
   pulled: number;
   returned: number;
-  used: number;
-  wasted: number;
   remaining: number;
 };
 
@@ -75,14 +73,16 @@ export function CaseCloseoutPanel({
   status: string;
   lines: PullLine[];
 }) {
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [, start] = useTransition();
+  const open = status === "open";
 
   return (
     <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
       <h2 className="text-lg font-medium">Close-out</h2>
       <p className="text-sm text-slate-600">
-        Return each item that comes back to the shelf. Anything still out is a gap.
+        Return each item that comes back to the shelf. Anything not returned
+        counts as used when the case closes.
       </p>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
@@ -92,7 +92,9 @@ export function CaseCloseoutPanel({
               <th className="py-2 pr-3 font-medium">Lot</th>
               <th className="py-2 pr-3 font-medium">Pulled</th>
               <th className="py-2 pr-3 font-medium">Returned</th>
-              <th className="py-2 pr-3 font-medium">Left</th>
+              <th className="py-2 pr-3 font-medium">
+                {open ? "Still out" : "Used (not returned)"}
+              </th>
               <th className="py-2 font-medium">Action</th>
             </tr>
           </thead>
@@ -110,7 +112,7 @@ export function CaseCloseoutPanel({
                 <td className="py-2 pr-3">{l.returned}</td>
                 <td className="py-2 pr-3 font-semibold">{l.remaining}</td>
                 <td className="py-2">
-                  {status === "open" ? (
+                  {open ? (
                     <CloseoutButtons caseId={caseId} line={l} />
                   ) : (
                     <span className="text-xs text-slate-500">{status}</span>
@@ -129,7 +131,7 @@ export function CaseCloseoutPanel({
         </table>
       </div>
 
-      {status === "open" ? (
+      {open ? (
         <div className="flex flex-wrap gap-2 pt-2">
           <button
             type="button"
@@ -137,7 +139,7 @@ export function CaseCloseoutPanel({
             onClick={() =>
               start(async () => {
                 const r = await closeCaseAction(caseId);
-                setMsg(r.message);
+                setMsg({ ok: r.ok, text: r.message });
               })
             }
           >
@@ -149,14 +151,22 @@ export function CaseCloseoutPanel({
             onClick={() =>
               start(async () => {
                 const r = await abortCaseAction(caseId);
-                setMsg(r.message);
+                setMsg({ ok: r.ok, text: r.message });
               })
             }
           >
             Abort case
           </button>
-          {msg ? <p className="w-full text-sm text-slate-700">{msg}</p> : null}
         </div>
+      ) : null}
+      {msg ? (
+        <p
+          className={`rounded px-3 py-2 text-sm ${
+            msg.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"
+          }`}
+        >
+          {msg.text}
+        </p>
       ) : null}
     </div>
   );

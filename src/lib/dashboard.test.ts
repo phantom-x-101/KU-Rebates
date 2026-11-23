@@ -96,7 +96,7 @@ describe("getSupplyChainDashboard against seed", () => {
     expect(dash.openExceptions.length).toBeGreaterThan(0);
     expect(
       dash.openExceptions.some(
-        (e) => e.type === "taken_not_scanned_or_returned",
+        (e) => e.type === "case_open_past_timeout",
       ),
     ).toBe(true);
     expect(dash.expiringIn30Days.length).toBeGreaterThan(0);

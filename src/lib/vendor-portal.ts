@@ -5,7 +5,7 @@ import {
   products,
   procedureTypes,
   rooms,
-  scans,
+  stockEvents,
   vendors,
   type User,
 } from "@/db/schema";
@@ -115,6 +115,7 @@ export type VendorUsageRow = {
 
 /**
  * Usage for the vendor's products by case.
+ * Closed cases only: pulled minus returned. Anything still out counts as used.
  * Case identity is date / room / procedure only (no patient fields).
  * Always filtered to `vendorId` in the data layer.
  */
@@ -134,51 +135,91 @@ export async function listVendorUsage(
     .select({
       caseId: cases.id,
       caseDate: cases.openedAt,
+      caseStatus: cases.status,
       roomName: rooms.name,
       procedureTypeName: procedureTypes.name,
       productId: products.id,
       catalogNumber: products.catalogNumber,
       description: products.description,
       productVendorId: products.vendorId,
-      lot: scans.lot,
-      qty: scans.qty,
-      disposition: scans.status,
+      lot: stockEvents.lot,
+      expiry: stockEvents.expiry,
+      qty: stockEvents.qty,
+      eventType: stockEvents.eventType,
     })
-    .from(scans)
-    .innerJoin(products, eq(scans.productId, products.id))
-    .innerJoin(cases, eq(scans.caseId, cases.id))
+    .from(stockEvents)
+    .innerJoin(products, eq(stockEvents.productId, products.id))
+    .innerJoin(cases, eq(stockEvents.caseId, cases.id))
     .leftJoin(rooms, eq(cases.roomId, rooms.id))
     .leftJoin(procedureTypes, eq(cases.procedureTypeId, procedureTypes.id))
     .where(
       and(
         eq(products.vendorId, vendorId),
-        inArray(scans.status, ["used", "wasted"]),
-        inArray(scans.productId, productIds),
+        eq(cases.status, "closed"),
+        inArray(stockEvents.eventType, ["pulled", "returned"]),
+        inArray(stockEvents.productId, productIds),
       ),
     )
-    .orderBy(desc(cases.openedAt), desc(scans.id));
+    .orderBy(desc(cases.openedAt), desc(stockEvents.id));
 
-  return rows
-    .filter((r) => {
-      if (r.productVendorId !== vendorId) return false;
-      if (r.disposition !== "used" && r.disposition !== "wasted") return false;
-      const day = r.caseDate.slice(0, 10);
-      if (filters.fromDate && day < filters.fromDate) return false;
-      if (filters.toDate && day > filters.toDate) return false;
-      return true;
-    })
-    .map((r) => ({
-      caseId: r.caseId,
-      caseDate: r.caseDate.slice(0, 10),
-      roomName: r.roomName,
-      procedureTypeName: r.procedureTypeName,
-      productId: r.productId,
-      catalogNumber: r.catalogNumber,
-      description: r.description,
-      lot: r.lot,
-      qty: r.qty,
-      disposition: r.disposition as "used" | "wasted",
-    }));
+  type Acc = {
+    caseId: number;
+    caseDate: string;
+    roomName: string | null;
+    procedureTypeName: string | null;
+    productId: number;
+    catalogNumber: string;
+    description: string;
+    lot: string | null;
+    pulled: number;
+    returned: number;
+  };
+  const map = new Map<string, Acc>();
+  for (const r of rows) {
+    if (r.productVendorId !== vendorId) continue;
+    if (r.caseStatus !== "closed") continue;
+    const day = r.caseDate.slice(0, 10);
+    if (filters.fromDate && day < filters.fromDate) continue;
+    if (filters.toDate && day > filters.toDate) continue;
+    const key = `${r.caseId}|${r.productId}|${r.lot ?? ""}|${r.expiry ?? ""}`;
+    const cur =
+      map.get(key) ??
+      ({
+        caseId: r.caseId,
+        caseDate: day,
+        roomName: r.roomName,
+        procedureTypeName: r.procedureTypeName,
+        productId: r.productId,
+        catalogNumber: r.catalogNumber,
+        description: r.description,
+        lot: r.lot,
+        pulled: 0,
+        returned: 0,
+      } satisfies Acc);
+    if (r.eventType === "pulled") cur.pulled += r.qty;
+    if (r.eventType === "returned") cur.returned += r.qty;
+    map.set(key, cur);
+  }
+
+  return [...map.values()]
+    .map((a) => ({
+      caseId: a.caseId,
+      caseDate: a.caseDate,
+      roomName: a.roomName,
+      procedureTypeName: a.procedureTypeName,
+      productId: a.productId,
+      catalogNumber: a.catalogNumber,
+      description: a.description,
+      lot: a.lot,
+      qty: a.pulled - a.returned,
+      disposition: "used" as const,
+    }))
+    .filter((r) => r.qty > 0)
+    .sort((a, b) => {
+      const byDate = b.caseDate.localeCompare(a.caseDate);
+      if (byDate !== 0) return byDate;
+      return b.caseId - a.caseId;
+    });
 }
 
 export async function getVendorName(

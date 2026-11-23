@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
-import { identifyProduct, recordArrival } from "@/lib/arrival";
+import { lookupForArrival, recordArrival } from "@/lib/arrival";
 import type { UserRole } from "@/db/schema";
 
 export type ArrivalActionState = {
@@ -22,8 +22,10 @@ async function requireScanUser() {
 }
 
 export async function lookupBarcodeAction(rawBarcode: string) {
-  await requireScanUser();
-  return identifyProduct(rawBarcode);
+  const user = await requireScanUser();
+  const result = await lookupForArrival(rawBarcode, user.id);
+  if (!result.product) revalidatePath("/exceptions");
+  return result;
 }
 
 export async function recordArrivalAction(

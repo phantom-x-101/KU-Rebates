@@ -176,6 +176,83 @@ describe("Terumo rep cannot read Cardiva", () => {
     ).toBe(false);
   });
 
+  it("closed-case pulls that were not returned show as used", async () => {
+    const db = await freshDb();
+    const { openCase, closeCase } = await import("@/lib/cases");
+    const { recordPull } = await import("@/lib/pull");
+    const { identifyProduct } = await import("@/lib/arrival");
+    const { TERUMO_GS1_SAMPLE } = await import("@/lib/barcode");
+    const { closeoutReturned } = await import("@/lib/closeout");
+
+    const usedCase = await openCase(
+      { departmentId: 1, roomId: 1, procedureTypeId: 1 },
+      1,
+      db,
+    );
+    const terumo = await identifyProduct(TERUMO_GS1_SAMPLE, db);
+    await recordPull(
+      {
+        caseId: usedCase.id,
+        rawBarcode: TERUMO_GS1_SAMPLE,
+        productId: terumo.product!.productId,
+        locationId: 1,
+        lot: terumo.parsed.lot!,
+        expiry: terumo.parsed.expiry!,
+        qty: 1,
+        lotExpirySource: "barcode",
+      },
+      1,
+      db,
+    );
+    await closeCase(usedCase.id, 1, db);
+
+    const returnedCase = await openCase(
+      { departmentId: 1, roomId: 1, procedureTypeId: 1 },
+      1,
+      db,
+    );
+    await recordPull(
+      {
+        caseId: returnedCase.id,
+        rawBarcode: TERUMO_GS1_SAMPLE,
+        productId: terumo.product!.productId,
+        locationId: 1,
+        lot: terumo.parsed.lot!,
+        expiry: terumo.parsed.expiry!,
+        qty: 1,
+        lotExpirySource: "barcode",
+      },
+      1,
+      db,
+    );
+    await closeoutReturned(
+      {
+        caseId: returnedCase.id,
+        productId: terumo.product!.productId,
+        locationId: 1,
+        lot: terumo.parsed.lot!,
+        expiry: terumo.parsed.expiry!,
+        qty: 1,
+      },
+      1,
+      db,
+    );
+    await closeCase(returnedCase.id, 1, db);
+
+    const usage = await listVendorUsage(TERUMO_VENDOR_ID, {}, db);
+    expect(
+      usage.some(
+        (row) =>
+          row.caseId === usedCase.id &&
+          row.catalogNumber === "RSS802" &&
+          row.lot === "0001681425" &&
+          row.qty === 1 &&
+          row.disposition === "used",
+      ),
+    ).toBe(true);
+    expect(usage.some((row) => row.caseId === returnedCase.id)).toBe(false);
+  });
+
   it("requireVendorRepScope always binds Terumo rep to vendor 1 (not Cardiva)", () => {
     const scope = requireVendorRepScope(terumoRep);
     expect(scope.vendorId).toBe(TERUMO_VENDOR_ID);

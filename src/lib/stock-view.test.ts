@@ -82,6 +82,10 @@ describe("Phase 6 stock, expiry, reorder", () => {
     const ensured = await ensureExpiredOnShelfExceptions(2, new Date(), db);
     expect(ensured.createdExceptionIds.length).toBeGreaterThanOrEqual(1);
 
+    const fullView = await listStockView({}, new Date(), db);
+    const again = await ensureExpiredOnShelfExceptions(2, new Date(), db, fullView);
+    expect(again.createdExceptionIds).toHaveLength(0);
+
     const exc = await db
       .select()
       .from(exceptions)

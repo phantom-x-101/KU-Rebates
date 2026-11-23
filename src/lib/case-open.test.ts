@@ -94,7 +94,7 @@ describe("open case by lab and room", () => {
       openOrResumeCase({ departmentId: 1, roomId: 3 }, 1, db),
     ).rejects.toThrow(/not in the selected lab/);
 
-    const options = await loadCaseOpenOptions(2, db);
+    const options = await loadCaseOpenOptions(4, db);
     const cath = options.labs.find((lab) => lab.name === "Cath lab");
     expect(cath?.preview).toBe(true);
     expect(options.labs.find((lab) => lab.name === "EP lab")?.preview).toBe(false);
@@ -105,8 +105,8 @@ describe("open case by lab and room", () => {
     expect(options.last).toBeNull();
     expect(options.commonProcedure[1]).toBeDefined();
 
-    await openOrResumeCase({ departmentId: 2, roomId: 4, procedureTypeId: 6 }, 2, db);
-    const remembered = await loadCaseOpenOptions(2, db);
+    await openOrResumeCase({ departmentId: 2, roomId: 4, procedureTypeId: 6 }, 4, db);
+    const remembered = await loadCaseOpenOptions(4, db);
     expect(remembered.last).toEqual({ departmentId: 2, roomId: 4, procedureTypeId: 6 });
 
     const alex = await loadCaseOpenOptions(1, db);

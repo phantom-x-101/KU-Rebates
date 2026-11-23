@@ -1,10 +1,21 @@
-import { CARDIVA_HIBC_SAMPLE, TERUMO_GS1_SAMPLE } from "@/lib/barcode";
 import {
   DEMO_HIBC,
   LIVE_LOTS,
   demoGtin,
   gs1Element,
 } from "@/lib/demo-gtin";
+import {
+  CARDIVA_VASCADE,
+  DECA_CABLE_PACK,
+  NUVISION_NAV,
+  TERUMO_11FR,
+  TERUMO_8FR,
+  gs1LotLabel,
+  gtinLabel,
+  hibcPrimaryLabel,
+  hibcSecondaryLabel,
+  type RealProduct,
+} from "@/lib/real-products";
 
 export type DemoSymbology = "gs1-128" | "hibc" | "code128";
 
@@ -25,25 +36,57 @@ export const MAPPING_GS1_SAMPLE =
 export const MAPPING_GS1_EXTRA =
   "(01)00012345670002(17)270816(10)VCMAP2002";
 export const EXPIRED_GS1_SAMPLE =
-  "(01)00380628008026(17)200101(10)EXPIREDDEMO";
+  "(01)00012345670002(17)200101(10)EXPIREDDEMO";
 export const UNKNOWN_BARCODE = "UNKNOWN-DEMO-99";
 
+function gs1Pair(product: RealProduct): DemoLabel[] {
+  return [
+    {
+      id: `${product.catalogNumber}-item`,
+      title: `${product.description} · item`,
+      caption: `${product.catalogNumber} · GTIN ${product.gtin}`,
+      barcode: gtinLabel(product),
+      symbology: "gs1-128",
+      note: "Real package. GTIN only. Scan first; the station waits for the lot label.",
+    },
+    {
+      id: `${product.catalogNumber}-lot`,
+      title: `${product.description} · lot and expiry`,
+      caption: `lot ${product.lot} · exp ${product.expiry}`,
+      barcode: gs1LotLabel(product),
+      symbology: "gs1-128",
+      note: "Real package. No GTIN. Scan right after the item label.",
+    },
+  ];
+}
+
 export const DEMO_LABELS: DemoLabel[] = [
+  ...gs1Pair(TERUMO_8FR),
+  ...gs1Pair(TERUMO_11FR),
   {
-    id: "terumo",
-    title: "Terumo Pinnacle sheath 8 Fr",
-    caption: "RSS802 · lot 0001681425 · exp 2028-11-01",
-    barcode: TERUMO_GS1_SAMPLE,
-    symbology: "gs1-128",
-    note: "GS1 — lot and expiry come from the barcode",
+    id: "cardiva-item",
+    title: `${CARDIVA_VASCADE.description} · item`,
+    caption: `${CARDIVA_VASCADE.catalogNumber} · HIBC ${CARDIVA_VASCADE.hibc} + check character`,
+    barcode: hibcPrimaryLabel(CARDIVA_VASCADE),
+    symbology: "hibc",
+    note: "Real package. Code 39 HIBC item code. Scan first; the station waits for the lot label.",
   },
   {
-    id: "cardiva",
-    title: "Cardiva Vascade MVP closure",
-    caption: "800-612C · lot G612C260420B · exp 2028-04-09",
-    barcode: CARDIVA_HIBC_SAMPLE,
+    id: "cardiva-lot",
+    title: `${CARDIVA_VASCADE.description} · lot and expiry`,
+    caption: `lot ${CARDIVA_VASCADE.lot} · exp ${CARDIVA_VASCADE.expiry}`,
+    barcode: hibcSecondaryLabel(CARDIVA_VASCADE),
     symbology: "hibc",
-    note: "HIBC — item only; confirm lot and expiry on screen",
+    note: "Real package. Code 39 HIBC +$$3 YYMMDD lot. Scan right after the item label.",
+  },
+  ...gs1Pair(NUVISION_NAV),
+  {
+    id: "deca-pack",
+    title: `${DECA_CABLE_PACK.description} · hospital-owned`,
+    caption: `${DECA_CABLE_PACK.catalogNumber} · not on any contract`,
+    barcode: DECA_CABLE_PACK.catalogNumber,
+    symbology: "code128",
+    note: `Sterilized instrument pack, not vendor stock. Arrive or pull it to open "Not on any contract". Sterile date ${DECA_CABLE_PACK.sterileDate} as read from the pack. Lot ${DECA_CABLE_PACK.lot} stands in for the load number (not captured). Expiry ${DECA_CABLE_PACK.expiry} is a 6-month placeholder.`,
   },
   {
     id: "ablation",
@@ -106,8 +149,8 @@ export const DEMO_LABELS: DemoLabel[] = [
     note: "On the shelf. Fake demo GTIN.",
   },
   {
-    id: "no-contract",
-    title: "Vendor G demo pulse implant — no contract",
+    id: "live-implant",
+    title: "Vendor G demo pulse implant (placeholder)",
     caption: "VG-IMP-02 · lot VGIMP9001 · exp 2031-06-15",
     barcode: gs1Element(
       demoGtin(LIVE_LOTS.implant.productId),
@@ -115,7 +158,7 @@ export const DEMO_LABELS: DemoLabel[] = [
       LIVE_LOTS.implant.lot,
     ),
     symbology: "gs1-128",
-    note: "On the shelf. Placeholder product. No contract is loaded for this item.",
+    note: "On the shelf. Fake demo GTIN.",
   },
   {
     id: "hibc-wire",
@@ -123,12 +166,12 @@ export const DEMO_LABELS: DemoLabel[] = [
     caption: "VC-GW-01 · lot LIVEGW701 · exp 2031-05-20",
     barcode: DEMO_HIBC.vendorCWire,
     symbology: "hibc",
-    note: "On the shelf. HIBC — item only. Enter lot and expiry on the station.",
+    note: "On the shelf. HIBC item only, no lot label. Pick the lot on the station.",
   },
   {
     id: "expired",
-    title: "Expired Terumo sheath",
-    caption: "RSS802 · lot EXPIREDDEMO · exp 2020-01-01",
+    title: "Expired Vendor C mapping catheter (placeholder)",
+    caption: "VC-MAP-01 · lot EXPIREDDEMO · exp 2020-01-01",
     barcode: EXPIRED_GS1_SAMPLE,
     symbology: "gs1-128",
     note: "Scan should fail — expired",
@@ -154,9 +197,9 @@ export function labelSymbolText(barcode: string): string {
   return parts.map((part) => `${part[1]}${part[2].trim()}`).join("");
 }
 
-/** GS1 for the seeded expiring Terumo lot. Expiry date comes from the database. */
+/** GS1 for the seeded expiring placeholder mapping lot. Expiry date comes from the database. */
 export function expiringLotBarcode(expiryIso: string) {
   const yymmdd =
     expiryIso.slice(2, 4) + expiryIso.slice(5, 7) + expiryIso.slice(8, 10);
-  return `(01)00380628008026(17)${yymmdd}(10)EXPIRINGSOON1`;
+  return `(01)00012345670002(17)${yymmdd}(10)EXPIRINGSOON1`;
 }

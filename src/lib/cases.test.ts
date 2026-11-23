@@ -2,7 +2,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { exceptions } from "@/db/schema";
 import {
@@ -11,12 +10,9 @@ import {
   listCasePullLines,
   openCase,
 } from "@/lib/cases";
-import {
-  closeoutReturned,
-  closeoutUsed,
-  closeoutWasted,
-} from "@/lib/closeout";
+import { closeoutReturned } from "@/lib/closeout";
 import { recordPull } from "@/lib/pull";
+import { reconcileCase } from "@/lib/reconcile";
 import { stockOnHand } from "@/lib/stock";
 import {
   CARDIVA_HIBC_SAMPLE,
@@ -129,31 +125,7 @@ describe("Phase 4 EP case end to end", () => {
     expect(await soh(2, "G612C260420B")).toBe(closureBefore - 1);
     expect(await soh(3, "VCABL1001")).toBe(ablBefore - 1);
 
-    // Close-out: 2 used + 1 returned (spec example shape)
-    await closeoutUsed(
-      {
-        caseId: c.id,
-        productId: 1,
-        locationId: 1,
-        lot: "0001681425",
-        expiry: "2028-11-01",
-        qty: 1,
-      },
-      1,
-      db,
-    );
-    await closeoutUsed(
-      {
-        caseId: c.id,
-        productId: 2,
-        locationId: 1,
-        lot: "G612C260420B",
-        expiry: "2028-04-09",
-        qty: 1,
-      },
-      1,
-      db,
-    );
+    // Only the ablation catheter comes back; the other two count as used.
     await closeoutReturned(
       {
         caseId: c.id,
@@ -173,14 +145,22 @@ describe("Phase 4 EP case end to end", () => {
     expect(await soh(3, "VCABL1001")).toBe(ablBefore);
 
     const lines = await listCasePullLines(c.id, db);
-    expect(lines.every((l) => l.remaining === 0)).toBe(true);
+    expect(lines.map((l) => [l.productId, l.remaining]).sort()).toEqual([
+      [1, 1],
+      [2, 1],
+      [3, 0],
+    ]);
 
+    const excBefore = (await db.select().from(exceptions)).length;
     await closeCase(c.id, 1, db);
     const closed = await listCasePullLines(c.id, db);
     expect(closed.length).toBe(3);
+    const summary = await reconcileCase(c.id, db);
+    expect(summary).toMatchObject({ taken: 3, returned: 1, used: 2 });
+    expect((await db.select().from(exceptions)).length).toBe(excBefore);
   });
 
-  it("wasted creates opened_or_wasted exception; abort works", async () => {
+  it("abort works and creates no exception", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     const { db } = created;
@@ -206,29 +186,9 @@ describe("Phase 4 EP case end to end", () => {
       db,
     );
 
-    const { exception } = await closeoutWasted(
-      {
-        caseId: c.id,
-        productId: 1,
-        locationId: 1,
-        lot: "0001681425",
-        expiry: "2028-11-01",
-        qty: 1,
-      },
-      1,
-      db,
-    );
-    expect(exception.type).toBe("opened_or_wasted");
-    expect(exception.sourceContainer).toBe(1);
-
-    const rows = await db
-      .select()
-      .from(exceptions)
-      .where(eq(exceptions.id, exception.id));
-    expect(rows[0]?.type).toBe("opened_or_wasted");
-
-    const c2 = await openCase({ departmentId: 1, roomId: 1 }, 1, db);
-    const aborted = await abortCase(c2.id, 1, db);
+    const excBefore = (await db.select().from(exceptions)).length;
+    const aborted = await abortCase(c.id, 1, db);
     expect(aborted.status).toBe("aborted");
+    expect((await db.select().from(exceptions)).length).toBe(excBefore);
   });
 });

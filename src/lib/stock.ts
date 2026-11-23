@@ -61,3 +61,37 @@ export async function stockOnHand(
 
   return rows.filter((r) => r.onHand !== 0);
 }
+
+export type PullableLot = {
+  lot: string;
+  expiry: string;
+  locationId: number | null;
+  onHand: number;
+};
+
+/** Unexpired lots on hand for a product, earliest expiry first. */
+export async function listPullableLots(
+  productId: number,
+  today: Date = new Date(),
+  db: AppDb = getDb(),
+): Promise<PullableLot[]> {
+  const day = today.toISOString().slice(0, 10);
+  const rows = await stockOnHand({ productId }, db);
+  return rows
+    .filter(
+      (r): r is StockOnHandRow & { lot: string; expiry: string } =>
+        r.onHand > 0 && Boolean(r.lot) && Boolean(r.expiry) && r.expiry! >= day,
+    )
+    .map((r) => ({
+      lot: r.lot,
+      expiry: r.expiry,
+      locationId: r.locationId,
+      onHand: r.onHand,
+    }))
+    .sort(
+      (a, b) =>
+        a.expiry.localeCompare(b.expiry) ||
+        a.lot.localeCompare(b.lot) ||
+        (a.locationId ?? 0) - (b.locationId ?? 0),
+    );
+}
