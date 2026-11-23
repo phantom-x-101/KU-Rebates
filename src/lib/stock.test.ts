@@ -50,8 +50,8 @@ describe("stockOnHand", () => {
 
     // Terumo RSS802 primary lot: arrived 3 - pulled 2 = 1
     expect(byKey["1|0001681425"]).toBe(1);
-    // Expiring-soon lot untouched: 1
-    expect(byKey["1|EXPIRINGSOON1"]).toBe(1);
+    // Placeholder expiring-soon lot untouched: 1
+    expect(byKey["4|EXPIRINGSOON1"]).toBe(1);
     // Cardiva: arrived 2 - pulled 1 = 1
     expect(byKey["2|G612C260420B"]).toBe(1);
     // Ablation: arrived 2 - pulled 1 = 1

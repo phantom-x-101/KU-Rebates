@@ -9,13 +9,20 @@ import {
   vendors,
 } from "@/db/schema";
 import { audit } from "@/lib/audit";
-import { parseBarcode, type ParsedBarcode } from "@/lib/barcode";
+import {
+  hibcItemLookupKeys,
+  isLotExpiryOnly,
+  parseBarcode,
+  type ParsedBarcode,
+} from "@/lib/barcode";
+import { flagNotOnAnyContract, recordUnmappedBarcode } from "@/lib/exceptions";
 
 export type IdentifiedProduct = {
   productId: number;
   catalogNumber: string;
   description: string;
   vendorName: string;
+  hospitalOwned: boolean;
   matchedBy: string;
   matchedValue: string;
 };
@@ -24,12 +31,15 @@ export function identifyLookupValues(parsed: ParsedBarcode): {
   idType: "gtin" | "hibc" | "catalog";
   value: string;
 }[] {
+  if (isLotExpiryOnly(parsed)) return [];
   const out: { idType: "gtin" | "hibc" | "catalog"; value: string }[] = [];
   if (parsed.format === "gs1" && parsed.gtin) {
     out.push({ idType: "gtin", value: parsed.gtin });
   }
   if (parsed.format === "hibc" && parsed.item) {
-    out.push({ idType: "hibc", value: parsed.item });
+    for (const value of hibcItemLookupKeys(parsed.item)) {
+      out.push({ idType: "hibc", value });
+    }
   }
   if (parsed.item) {
     out.push({ idType: "catalog", value: parsed.item });
@@ -67,16 +77,16 @@ export async function identifyProduct(
       catalogNumber: products.catalogNumber,
       description: products.description,
       vendorName: vendors.name,
+      kuOwned: products.kuOwned,
       idType: productIdentifiers.idType,
       value: productIdentifiers.value,
     })
     .from(productIdentifiers)
     .innerJoin(products, eq(productIdentifiers.productId, products.id))
     .innerJoin(vendors, eq(products.vendorId, vendors.id))
-    .where(or(...conditions))
-    .limit(1);
+    .where(or(...conditions));
 
-  const row = rows[0];
+  const row = [...rows].sort((a, b) => b.value.length - a.value.length)[0];
   if (!row) {
     return { parsed, product: null };
   }
@@ -88,10 +98,27 @@ export async function identifyProduct(
       catalogNumber: row.catalogNumber,
       description: row.description,
       vendorName: row.vendorName,
+      hospitalOwned: row.kuOwned === 1,
       matchedBy: row.idType,
       matchedValue: row.value,
     },
   };
+}
+
+/**
+ * Identify an arrival scan; an unknown barcode opens a `bill_only_unmapped` exception.
+ * A lot-and-expiry label has no product key, so it is never "unknown".
+ */
+export async function lookupForArrival(
+  rawBarcode: string,
+  userId: number | null,
+  db: AppDb = getDb(),
+) {
+  const result = await identifyProduct(rawBarcode, db);
+  if (!result.product && !isLotExpiryOnly(result.parsed)) {
+    await recordUnmappedBarcode(rawBarcode, "arrival", userId, db);
+  }
+  return result;
 }
 
 export const recordArrivalSchema = z.object({
@@ -143,6 +170,7 @@ export async function recordArrival(
     },
     db,
   );
+  await flagNotOnAnyContract(data.productId, "arrival", userId, db);
 
   return event;
 }

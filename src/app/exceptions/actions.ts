@@ -6,7 +6,6 @@ import {
   assignExceptionOwner,
   resolveException,
 } from "@/lib/exceptions";
-import { reconcileTimedOutOpenCases } from "@/lib/reconcile";
 import { getCurrentUser } from "@/lib/session";
 
 export type ExceptionActionState = { ok: boolean; message: string };
@@ -72,27 +71,6 @@ export async function resolveExceptionAction(
     return {
       ok: false,
       message: e instanceof Error ? e.message : "Resolve failed",
-    };
-  }
-}
-
-export async function runTimeoutReconcileAction(): Promise<ExceptionActionState> {
-  try {
-    const user = await requireQueueUser();
-    const result = await reconcileTimedOutOpenCases(user.id);
-    const created = result.results.reduce(
-      (n, r) => n + r.createdExceptionIds.length,
-      0,
-    );
-    revalidatePath("/exceptions");
-    return {
-      ok: true,
-      message: `Timeout check (${result.hours}h): ${result.results.length} stale case(s), ${created} new exception(s)`,
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : "Timeout reconcile failed",
     };
   }
 }

@@ -10,9 +10,15 @@ import {
 import {
   CARDIVA_HIBC_SAMPLE,
   TERUMO_GS1_SAMPLE,
+  isLotExpiryOnly,
+  pairLotScan,
+  parseBarcode,
   type ParsedBarcode,
 } from "@/lib/barcode";
 import type { IdentifiedProduct } from "@/lib/arrival";
+import { CARDIVA_VASCADE, hibcSecondaryLabel } from "@/lib/real-products";
+
+const CARDIVA_LOT_LABEL = hibcSecondaryLabel(CARDIVA_VASCADE);
 
 type LocationOption = { id: number; name: string };
 
@@ -26,6 +32,11 @@ export function ScanArrivalForm({
   canAddProduct: boolean;
 }) {
   const [raw, setRaw] = useState("");
+  const [itemRaw, setItemRaw] = useState("");
+  const [lotScan, setLotScan] = useState<{ lot: boolean; expiry: boolean }>({
+    lot: false,
+    expiry: false,
+  });
   const [parsed, setParsed] = useState<ParsedBarcode | null>(null);
   const [product, setProduct] = useState<IdentifiedProduct | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -40,16 +51,37 @@ export function ScanArrivalForm({
     initial,
   );
 
-  const needsManualLotExpiry = useMemo(() => {
-    if (!parsed) return true;
-    return !(parsed.lot && parsed.expiry);
-  }, [parsed]);
+  const lotFromBarcode = Boolean(parsed?.lot) || lotScan.lot;
+  const expiryFromBarcode = Boolean(parsed?.expiry) || lotScan.expiry;
+  const needsManualLotExpiry = useMemo(
+    () => !(lotFromBarcode && expiryFromBarcode),
+    [lotFromBarcode, expiryFromBarcode],
+  );
 
   function applyLookup(nextRaw: string) {
+    setLookupError(null);
+    const scan = parseBarcode(nextRaw);
+    if (isLotExpiryOnly(scan)) {
+      if (!product) {
+        setLookupError("Scan the item barcode first. This label has only lot and expiry.");
+        return;
+      }
+      const pair = pairLotScan(itemRaw, scan);
+      if (!pair.ok) {
+        setLookupError(pair.message);
+        return;
+      }
+      if (pair.lot) setLot(pair.lot);
+      if (pair.expiry) setExpiry(pair.expiry);
+      setLotScan({ lot: Boolean(pair.lot), expiry: Boolean(pair.expiry) });
+      setRaw("");
+      return;
+    }
     startLookup(async () => {
-      setLookupError(null);
       setProduct(null);
       setParsed(null);
+      setLotScan({ lot: false, expiry: false });
+      setItemRaw(nextRaw.trim());
       try {
         const result = await lookupBarcodeAction(nextRaw);
         setParsed(result.parsed);
@@ -70,16 +102,13 @@ export function ScanArrivalForm({
     });
   }
 
-  const lotFromBarcode = Boolean(parsed?.lot);
-  const expiryFromBarcode = Boolean(parsed?.expiry);
-
   return (
     <div className="space-y-6">
       <section className="space-y-3 rounded border border-slate-200 bg-white p-4">
         <h2 className="text-lg font-medium">Scan or type barcode</h2>
         <p className="text-sm text-slate-600">
-          GS1 fills lot and expiry when present. HIBC is item-only — enter lot and
-          expiry by hand.
+          Scan the item barcode, then its lot-and-expiry barcode (GS1 17 + 10, or
+          HIBC +$$3). Without a lot label, enter lot and expiry by hand.
         </p>
         <div className="flex flex-wrap gap-2 text-xs">
           <button
@@ -100,7 +129,14 @@ export function ScanArrivalForm({
               applyLookup(CARDIVA_HIBC_SAMPLE);
             }}
           >
-            Fill Cardiva HIBC sample
+            Fill Cardiva HIBC item
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
+            onClick={() => applyLookup(CARDIVA_LOT_LABEL)}
+          >
+            Fill Cardiva lot label
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -187,11 +223,11 @@ export function ScanArrivalForm({
             </p>
           ) : (
             <p className="text-sm text-emerald-800">
-              Lot and expiry came from the GS1 barcode.
+              Lot and expiry came from the barcode.
             </p>
           )}
           <form action={saveAction} className="space-y-3">
-            <input type="hidden" name="rawBarcode" value={raw} />
+            <input type="hidden" name="rawBarcode" value={itemRaw} />
             <input type="hidden" name="productId" value={product.productId} />
             <input
               type="hidden"

@@ -33,8 +33,6 @@ type Line = {
   description: string;
   catalogNumber: string;
   pulled: number;
-  used: number;
-  wasted: number;
   returned: number;
   remaining: number;
 };
@@ -97,7 +95,7 @@ export function ScanStation({
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<StationOutcome | null>(null);
   const [closeNote, setCloseNote] = useState<{
-    balanced: boolean;
+    closed: boolean;
     message: string;
   } | null>(null);
   const [sim, setSim] = useState("");
@@ -159,8 +157,8 @@ export function ScanStation({
   }, []);
 
   useEffect(() => {
-    if (result?.status === "needs_lot" || result?.status === "unknown") return;
-    scanRef.current?.focus();
+    if (result?.status === "unknown") return;
+    focusScan();
   }, [result, pending]);
 
   async function submit(raw: string, extra?: { lot?: string; expiry?: string }) {
@@ -169,6 +167,9 @@ export function ScanStation({
     busy.current = true;
     setPending(true);
     setCloseNote(null);
+    // A lot-and-expiry label attaches to the item still waiting for its lot.
+    const pendingRaw =
+      !extra && result?.status === "needs_lot" ? result.raw : null;
     try {
       const outcome = await scanAction({
         mode,
@@ -176,6 +177,7 @@ export function ScanStation({
         caseId: caseRow?.id ?? null,
         lot: extra?.lot,
         expiry: extra?.expiry,
+        pendingRaw,
       });
       setResult(outcome);
       rememberArrival(outcome);
@@ -201,7 +203,7 @@ export function ScanStation({
     setPending(true);
     try {
       const closed = await closeEpCaseAction(caseRow.id);
-      setCloseNote({ balanced: closed.balanced, message: closed.message });
+      setCloseNote({ closed: closed.closed, message: closed.message });
       setResult(null);
       router.refresh();
     } finally {
@@ -212,14 +214,6 @@ export function ScanStation({
 
   const involved = new Set(lines.map((line) => line.productId));
   const tally = reconciliation;
-  const activity =
-    (tally?.taken ?? 0) +
-    (tally?.used ?? 0) +
-    (tally?.wasted ?? 0) +
-    (tally?.returned ?? 0);
-  const showTick = Boolean(tally && tally.balanced && activity > 0);
-  const showGap = Boolean(tally && !tally.balanced);
-
   const caseOpen = caseRow?.status === "open";
   const caseTitle = caseRow
     ? [caseRow.departmentName, caseRow.roomName, caseRow.procedureTypeName]
@@ -374,42 +368,74 @@ export function ScanStation({
 
         {result?.status === "needs_lot" ? (
           <form
+            key={`${result.raw}-${mode}-${result.lots.length}`}
             data-keep-focus
             className="space-y-3 rounded-xl border border-amber-400 bg-amber-50 p-4"
             onSubmit={(event) => {
               event.preventDefault();
               const data = new FormData(event.currentTarget);
-              void submit(result.raw, {
-                lot: String(data.get("lot") ?? ""),
-                expiry: String(data.get("expiry") ?? ""),
-              });
+              const picked = result.lots[Number(data.get("lotIndex") ?? -1)];
+              void submit(
+                result.raw,
+                picked
+                  ? { lot: picked.lot, expiry: picked.expiry }
+                  : {
+                      lot: String(data.get("lot") ?? ""),
+                      expiry: String(data.get("expiry") ?? ""),
+                    },
+              );
             }}
           >
             <p className="font-semibold text-amber-950">{result.message}</p>
             <p className="text-sm text-amber-950">
               {result.product.vendorName} · {result.product.description} ·{" "}
               {result.product.catalogNumber}
+              {result.product.hospitalOwned ? " · hospital-owned" : ""}
             </p>
+            <ScanReads reads={result.reads} className="text-amber-900" />
             <div className="flex flex-wrap gap-3">
-              <label className="text-sm">
-                Lot
-                <input
-                  name="lot"
-                  required
-                  defaultValue={result.suggestedLot}
-                  className="mt-1 block rounded border border-slate-300 px-2 py-1"
-                />
-              </label>
-              <label className="text-sm">
-                Expiry
-                <input
-                  name="expiry"
-                  type="date"
-                  required
-                  defaultValue={result.suggestedExpiry}
-                  className="mt-1 block rounded border border-slate-300 px-2 py-1"
-                />
-              </label>
+              {result.lots.length > 0 ? (
+                <label className="text-sm">
+                  {mode === "return" ? "Lot out on this case" : "Lot on hand"}
+                  <select
+                    name="lotIndex"
+                    defaultValue={0}
+                    className="mt-1 block rounded border border-slate-300 px-2 py-1 font-mono"
+                  >
+                    {result.lots.map((lot, index) => (
+                      <option
+                        key={`${lot.lot}-${lot.expiry}-${lot.locationId}`}
+                        value={index}
+                      >
+                        {lot.lot} · exp {lot.expiry} · {lot.onHand}{" "}
+                        {mode === "return" ? "out" : "on hand"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <>
+                  <label className="text-sm">
+                    Lot
+                    <input
+                      name="lot"
+                      required
+                      defaultValue={result.suggestedLot}
+                      className="mt-1 block rounded border border-slate-300 px-2 py-1"
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Expiry
+                    <input
+                      name="expiry"
+                      type="date"
+                      required
+                      defaultValue={result.suggestedExpiry}
+                      className="mt-1 block rounded border border-slate-300 px-2 py-1"
+                    />
+                  </label>
+                </>
+              )}
               <button
                 type="submit"
                 className="self-end rounded-lg bg-pc-teal px-3 py-2 text-sm font-semibold text-white"
@@ -527,11 +553,11 @@ export function ScanStation({
         {closeNote ? (
           <div
             className={`rounded-xl px-5 py-4 text-white ${
-              closeNote.balanced ? "bg-emerald-700" : "bg-red-700"
+              closeNote.closed ? "bg-emerald-700" : "bg-red-700"
             }`}
           >
             <p className="text-2xl font-bold">
-              {closeNote.balanced ? "Check passed" : "Check failed"}
+              {closeNote.closed ? "Case closed" : "Could not close"}
             </p>
             <p className="mt-1 text-lg">{closeNote.message}</p>
           </div>
@@ -550,25 +576,26 @@ export function ScanStation({
               <p className="mt-1 text-lg tabular-nums text-slate-800">
                 {tally.returned} returned
               </p>
-              {showTick ? (
-                <p className="mt-3 text-2xl font-bold text-emerald-700">✓ Check passed</p>
-              ) : showGap && caseRow?.status === "open" ? (
-                <p className="mt-3 text-2xl font-bold text-amber-800">
-                  {tally.gap} still to close out
-                </p>
-              ) : showGap ? (
-                <p className="mt-3 text-2xl font-bold text-red-700">✗ Gap {tally.gap}</p>
-              ) : (
+              {tally.taken === 0 ? (
                 <p className="mt-3 text-sm text-slate-500">
                   Check starts once items are pulled.
                 </p>
+              ) : caseOpen ? (
+                <p className="mt-3 text-lg font-semibold text-slate-800">
+                  {tally.used} still out · counts as used at close
+                </p>
+              ) : (
+                <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
+                  <p className="text-lg font-bold">Used (not returned): {tally.used}</p>
+                  <p className="text-lg font-bold">Returned: {tally.returned}</p>
+                </div>
               )}
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
                 {lines.map((line) => (
                   <li key={`${line.productId}-${line.lot}-${line.expiry}`}>
                     {line.description}{" "}
                     <span className="font-mono text-xs">{line.lot}</span> · pulled{" "}
-                    {line.pulled} · left {line.remaining}
+                    {line.pulled} · returned {line.returned}
                   </li>
                 ))}
               </ul>
@@ -594,10 +621,11 @@ export function ScanStation({
                 >
                   <div>
                     <p className="font-medium leading-tight">
-                      {row.vendorName} {row.catalogNumber}
+                      {row.description}
                     </p>
                     <p className="font-mono text-xs text-slate-500">
-                      {row.lot} · {row.expiry}
+                      {row.catalogNumber} · {row.lot} · {row.expiry}
+                      {row.hospitalOwned ? " · hospital-owned" : ""}
                       {row.flag === "expired"
                         ? " · expired"
                         : row.flag === "expiring_soon"
@@ -625,11 +653,9 @@ export function ScanStation({
             <ul className="mt-2 space-y-2">
               {arrivals.map((item, index) => (
                 <li key={item.id} className="text-sm leading-tight">
-                  <p className="font-medium">
-                    {item.vendorName} {item.catalogNumber}
-                  </p>
+                  <p className="font-medium">{item.description}</p>
                   <p className="text-xs text-slate-600">
-                    {item.description}
+                    {item.catalogNumber}
                     {item.lot ? ` · lot ${item.lot}` : ""}
                     {index === 0 ? " · just added" : ""}
                   </p>
@@ -673,10 +699,28 @@ function ResultCard({ result }: { result: StationOutcome | null }) {
       <p className="mt-2 text-xl">{result.item.description}</p>
       <p className="text-lg">
         {result.item.vendorName} · {result.item.catalogNumber}
+        {result.item.hospitalOwned ? " · hospital-owned" : ""}
       </p>
       <p className="mt-1 text-lg">
         Lot {result.item.lot} · exp {result.item.expiry} · qty {result.item.qty}
       </p>
+      {result.notice ? (
+        <p className="mt-3 rounded-lg bg-amber-100 px-3 py-2 text-lg font-semibold text-amber-950">
+          {result.notice}
+        </p>
+      ) : null}
+      <ScanReads reads={result.reads} className="mt-3 text-emerald-50" />
     </div>
+  );
+}
+
+function ScanReads({ reads, className }: { reads: string[]; className: string }) {
+  if (reads.length === 0) return null;
+  return (
+    <ul className={`space-y-0.5 font-mono text-xs ${className}`}>
+      {reads.map((read, index) => (
+        <li key={index}>Read: {read}</li>
+      ))}
+    </ul>
   );
 }

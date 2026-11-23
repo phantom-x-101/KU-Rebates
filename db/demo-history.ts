@@ -6,6 +6,8 @@
  */
 import { audit } from "../src/lib/audit";
 import { LIVE_LOTS, demoGtin } from "../src/lib/demo-gtin";
+import { UNMAPPED_ACTION } from "../src/lib/exceptions";
+import { CASE_TIMEOUT_ACTION } from "../src/lib/reconcile";
 import { listReorderView } from "../src/lib/reorder";
 import type { AppDb } from "../src/db";
 import {
@@ -28,10 +30,11 @@ import {
   vendors,
 } from "../src/db/schema";
 import {
-  EXTRA_PRODUCTS,
-  NO_CONTRACT_PRODUCT_ID,
-  type CatalogItem,
-} from "./demo-catalog";
+  NUVISION_NAV,
+  NUVISION_VENDOR_ID,
+  TERUMO_11FR,
+} from "../src/lib/real-products";
+import { EXTRA_PRODUCTS, type CatalogItem } from "./demo-catalog";
 
 const RNG_SEED = 20261110;
 const LOW_STOCK_PRODUCT_ID = 11;
@@ -39,6 +42,8 @@ const CASE_COUNT = 40;
 const GAP_INDEXES = new Set([4, 21]);
 const ABORT_INDEXES = new Set([9, 30]);
 const WASTE_INDEXES = new Set([2, 12, 18, 33]);
+/** Placeholder barcode that maps to no product. */
+export const SEED_UNMAPPED_BARCODE = "+H999DEMO01";
 const FORCE_LOW_INDEXES = new Set([0, 1, 2, 3, 5, 6]);
 
 type Lot = {
@@ -94,17 +99,16 @@ type CaseRow = {
   roomId: number;
   procedureTypeId: number;
   openedAt: string;
-  closedAt: string;
+  closedAt: string | null;
   openedBy: number;
-  status: "closed" | "aborted";
+  status: "open" | "closed" | "aborted";
 };
 
 type ExcRow = {
   id: number;
   sourceContainer: 1;
-  type: "taken_not_scanned_or_returned" | "opened_or_wasted" | "expired_on_shelf";
-  scanId?: number;
-  productId: number;
+  type: "expired_on_shelf" | "case_open_past_timeout" | "bill_only_unmapped";
+  productId: number | null;
   status: "open";
   ownerUserId: number | null;
   createdAt: string;
@@ -274,6 +278,14 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
       vendorId: 7,
       active: 1,
     },
+    {
+      id: 12,
+      name: "Nico · NuVision",
+      email: "nico.rep@nuvision.example",
+      role: "vendor_rep",
+      vendorId: NUVISION_VENDOR_ID,
+      active: 1,
+    },
   ]);
   // Cath lab rooms exist for the case picker only; its workflow is a preview.
   await db.insert(rooms).values([
@@ -358,13 +370,14 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
     { id: 5, name: "Vendor E" },
     { id: 6, name: "Vendor F" },
     { id: 7, name: "Vendor G" },
+    { id: NUVISION_VENDOR_ID, name: "NuVision" },
   ];
   await db.insert(contracts).values(
     vendorRows.map((vendor) => ({
       id: vendor.id,
       vendorId: vendor.id,
       name:
-        vendor.id <= 2
+        vendor.id <= 2 || vendor.id === NUVISION_VENDOR_ID
           ? `${vendor.name} placeholder terms (demo)`
           : `${vendor.name} placeholder agreement`,
       externalId: `DEMO-${vendor.id}`,
@@ -388,14 +401,15 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
       unitPrice: null,
     })),
   );
+  // The hospital-owned DECA cable pack is on no contract line.
   const contracted = [
     { id: 1, vendorId: 1 },
     { id: 2, vendorId: 2 },
     { id: 3, vendorId: 3 },
     { id: 4, vendorId: 3 },
-    ...EXTRA_PRODUCTS.filter((item) => item.id !== NO_CONTRACT_PRODUCT_ID).map(
-      (item) => ({ id: item.id, vendorId: item.vendorId }),
-    ),
+    { id: TERUMO_11FR.id, vendorId: TERUMO_11FR.vendorId },
+    { id: NUVISION_NAV.id, vendorId: NUVISION_NAV.vendorId },
+    ...EXTRA_PRODUCTS.map((item) => ({ id: item.id, vendorId: item.vendorId })),
   ];
   await db.insert(contractLineProducts).values(
     contracted.map((item) => ({
@@ -434,9 +448,8 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
   const caseRows: CaseRow[] = [];
   const scanRows: ScanRow[] = [];
   const excRows: ExcRow[] = [];
-  const gapAudits: { id: number; caseId: number; productId: number }[] = [];
   let nextScan = 5;
-  let nextExc = 2;
+  let nextExc = 1;
 
   function addLot(
     productId: number,
@@ -731,8 +744,6 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
       if (WASTE_INDEXES.has(slot.index)) {
         retarget(lines, 5, arriveAt);
       } else if (GAP_INDEXES.has(slot.index)) {
-        // Keep products 1 and 3 free of extra gaps. Tests close a new
-        // product-3 gap and expect that to be the only open one.
         retarget(lines, slot.index === 4 ? 4 : 5, arriveAt);
       }
 
@@ -821,10 +832,8 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
           return;
         }
 
-        const wasted = wasteLine === line;
-        const scanId = nextScan++;
         scanRows.push({
-          id: scanId,
+          id: nextScan++,
           caseId,
           scannedAt: closedAt,
           scannedBy: 1,
@@ -834,40 +843,10 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
           lot: line.lot,
           expiry: line.expiry,
           lotExpirySource: "manual",
-          status: wasted ? "wasted" : "used",
+          status: "used",
           qty: 1,
         });
-        if (wasted) {
-          excRows.push({
-            id: nextExc++,
-            sourceContainer: 1,
-            type: "opened_or_wasted",
-            scanId,
-            productId: line.productId,
-            status: "open",
-            ownerUserId: 2,
-            createdAt: closedAt,
-          });
-        }
       });
-
-      if (gapLine) {
-        const excId = nextExc++;
-        excRows.push({
-          id: excId,
-          sourceContainer: 1,
-          type: "taken_not_scanned_or_returned",
-          productId: gapLine.productId,
-          status: "open",
-          ownerUserId: 2,
-          createdAt: closedAt,
-        });
-        gapAudits.push({
-          id: excId,
-          caseId,
-          productId: gapLine.productId,
-        });
-      }
     }
   }
 
@@ -879,19 +858,27 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
   if (lots.some((lot) => lot.qty < 0)) {
     throw new Error("A lot went negative");
   }
-  const wasted = excRows.filter((row) => row.type === "opened_or_wasted").length;
-  const gaps = excRows.filter(
-    (row) => row.type === "taken_not_scanned_or_returned",
-  ).length;
-  if (wasted !== 4) throw new Error(`Expected 4 wasted items, got ${wasted}`);
-  if (gaps !== 2) throw new Error(`Expected 2 new gap cases, got ${gaps}`);
+  const staleCaseId = CASE_COUNT + 2;
+  const staleOpenedAt = stamp(addDays(today, -2), 7, 30);
+  caseRows.push({
+    id: staleCaseId,
+    departmentId: 2,
+    roomId: 3,
+    procedureTypeId: 5,
+    openedAt: staleOpenedAt,
+    closedAt: null,
+    openedBy: 2,
+    status: "open",
+  });
+  const staleExcId = nextExc++;
+  const unmappedExcId = nextExc++;
 
   excRows.push(
     {
       id: nextExc++,
       sourceContainer: 1,
       type: "expired_on_shelf",
-      productId: 2,
+      productId: 4,
       status: "open",
       ownerUserId: null,
       createdAt: stamp(addDays(today, -2), 7, 0),
@@ -904,6 +891,24 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
       status: "open",
       ownerUserId: null,
       createdAt: stamp(addDays(today, -2), 7, 5),
+    },
+    {
+      id: staleExcId,
+      sourceContainer: 1,
+      type: "case_open_past_timeout",
+      productId: null,
+      status: "open",
+      ownerUserId: null,
+      createdAt: stamp(addDays(today, -1), 8, 0),
+    },
+    {
+      id: unmappedExcId,
+      sourceContainer: 1,
+      type: "bill_only_unmapped",
+      productId: null,
+      status: "open",
+      ownerUserId: null,
+      createdAt: stamp(addDays(today, -1), 9, 10),
     },
   );
 
@@ -926,29 +931,43 @@ export async function seedLabHistory(db: AppDb, opts: { todayIso: string }) {
   for (const caseRow of caseRows) {
     await audit(
       {
-        userId: 1,
+        userId: caseRow.openedBy,
         container: 2,
         entity: "cases",
         entityId: caseRow.id,
-        action: caseRow.status === "aborted" ? "seed_aborted" : "seed_close",
+        action:
+          caseRow.status === "aborted"
+            ? "seed_aborted"
+            : caseRow.status === "open"
+              ? "seed_open"
+              : "seed_close",
         detail: `case=${caseRow.id} status=${caseRow.status}`,
       },
       db,
     );
   }
-  for (const gap of gapAudits) {
-    await audit(
-      {
-        userId: 4,
-        container: 1,
-        entity: "exceptions",
-        entityId: gap.id,
-        action: "seed",
-        detail: `case=${gap.caseId} product=${gap.productId} gap=1 Historical item left open`,
-      },
-      db,
-    );
-  }
+  await audit(
+    {
+      userId: 4,
+      container: 1,
+      entity: "exceptions",
+      entityId: staleExcId,
+      action: CASE_TIMEOUT_ACTION,
+      detail: `case=${staleCaseId} room=Cath 1 opened=${staleOpenedAt} timeout=24h`,
+    },
+    db,
+  );
+  await audit(
+    {
+      userId: 4,
+      container: 1,
+      entity: "exceptions",
+      entityId: unmappedExcId,
+      action: UNMAPPED_ACTION,
+      detail: `via=arrival barcode=${SEED_UNMAPPED_BARCODE}`,
+    },
+    db,
+  );
 
   await printSummary(db, opts.todayIso);
 }

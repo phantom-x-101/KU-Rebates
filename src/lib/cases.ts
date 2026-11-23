@@ -7,7 +7,6 @@ import {
   procedureTypes,
   products,
   rooms,
-  scans,
   stockEvents,
   vendors,
 } from "@/db/schema";
@@ -188,10 +187,6 @@ export async function closeCase(
     db,
   );
 
-  // Phase 5: gap → taken_not_scanned_or_returned; surplus → closeout_exceeds_taken
-  const { createGapExceptions } = await import("@/lib/reconcile");
-  await createGapExceptions(caseId, userId, db);
-
   return row;
 }
 
@@ -206,7 +201,10 @@ function lineKey(k: CaseLineKey) {
   return `${k.productId}|${k.lot ?? ""}|${k.expiry ?? ""}|${k.locationId ?? ""}`;
 }
 
-/** Pulled lines for a case with remaining qty still needing close-out. */
+/**
+ * Pulled lines for a case. `remaining` is still out of the shelf; at close it
+ * counts as used.
+ */
 export async function listCasePullLines(caseId: number, db: AppDb = getDb()) {
   const events = await db
     .select({
@@ -226,8 +224,6 @@ export async function listCasePullLines(caseId: number, db: AppDb = getDb()) {
     .innerJoin(vendors, eq(products.vendorId, vendors.id))
     .where(eq(stockEvents.caseId, caseId));
 
-  const caseScans = await db.select().from(scans).where(eq(scans.caseId, caseId));
-
   type Acc = {
     productId: number;
     lot: string | null;
@@ -238,8 +234,6 @@ export async function listCasePullLines(caseId: number, db: AppDb = getDb()) {
     vendorName: string;
     pulled: number;
     returned: number;
-    used: number;
-    wasted: number;
   };
 
   const map = new Map<string, Acc>();
@@ -264,33 +258,14 @@ export async function listCasePullLines(caseId: number, db: AppDb = getDb()) {
         vendorName: e.vendorName,
         pulled: 0,
         returned: 0,
-        used: 0,
-        wasted: 0,
       } satisfies Acc);
     if (e.eventType === "pulled") cur.pulled += e.qty;
     if (e.eventType === "returned") cur.returned += e.qty;
     map.set(key, cur);
   }
 
-  for (const s of caseScans) {
-    if (!s.productId) continue;
-    // Scans don't store location; match product/lot/expiry across locations by preferring any open line.
-    const candidates = [...map.values()].filter(
-      (l) =>
-        l.productId === s.productId &&
-        (l.lot ?? null) === (s.lot ?? null) &&
-        (l.expiry ?? null) === (s.expiry ?? null),
-    );
-    const target =
-      candidates.find((c) => c.pulled - c.returned - c.used - c.wasted > 0) ??
-      candidates[0];
-    if (!target) continue;
-    if (s.status === "used") target.used += s.qty;
-    if (s.status === "wasted") target.wasted += s.qty;
-  }
-
   return [...map.values()].map((l) => ({
     ...l,
-    remaining: l.pulled - l.returned - l.used - l.wasted,
+    remaining: l.pulled - l.returned,
   }));
 }

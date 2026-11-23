@@ -4,43 +4,51 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { auditLog, exceptions } from "@/db/schema";
-import { closeCase, openCase } from "@/lib/cases";
-import { closeoutReturned, closeoutUsed } from "@/lib/closeout";
+import { auditLog, cases, exceptions } from "@/db/schema";
+import { abortCase, closeCase, openCase } from "@/lib/cases";
+import { closeoutReturned } from "@/lib/closeout";
+import {
+  assertCanAccessExceptionQueue,
+  canAccessExceptionQueue,
+  listExceptions,
+  resolveException,
+} from "@/lib/exceptions";
 import { recordPull } from "@/lib/pull";
 import {
+  CASE_TIMEOUT_ACTION,
+  flagCasesOpenPastTimeout,
   reconcileCase,
-  reconcileTimedOutOpenCases,
   summarizeFromCounts,
 } from "@/lib/reconcile";
-import { resolveException, listExceptions } from "@/lib/exceptions";
 
-describe("reconcile taken = used + wasted + returned", () => {
-  it("passes the 3 = 2 + 1 example", () => {
-    const r = summarizeFromCounts({
+describe("check: taken = returned + used", () => {
+  it("counts anything not returned as used", () => {
+    expect(summarizeFromCounts({ taken: 3, returned: 1 })).toEqual({
       taken: 3,
+      returned: 1,
       used: 2,
-      wasted: 0,
-      returned: 1,
     });
-    expect(r.accounted).toBe(3);
-    expect(r.gap).toBe(0);
-    expect(r.balanced).toBe(true);
-  });
-
-  it("flags a gap when taken exceeds accounted", () => {
-    const r = summarizeFromCounts({
-      taken: 3,
-      used: 1,
-      wasted: 0,
-      returned: 1,
-    });
-    expect(r.gap).toBe(1);
-    expect(r.balanced).toBe(false);
+    expect(summarizeFromCounts({ taken: 2, returned: 2 }).used).toBe(0);
+    expect(summarizeFromCounts({ taken: 0, returned: 0 }).used).toBe(0);
   });
 });
 
-describe("reconcileCase + gap exceptions", () => {
+describe("exception queue permissions", () => {
+  it("allows supply_chain, admin, category_owner; denies vendor_rep and tech", () => {
+    expect(canAccessExceptionQueue({ role: "supply_chain", active: 1 })).toBe(true);
+    expect(canAccessExceptionQueue({ role: "admin", active: 1 })).toBe(true);
+    expect(canAccessExceptionQueue({ role: "category_owner", active: 1 })).toBe(true);
+    expect(canAccessExceptionQueue({ role: "vendor_rep", active: 1 })).toBe(false);
+    expect(canAccessExceptionQueue({ role: "tech", active: 1 })).toBe(false);
+    expect(canAccessExceptionQueue(null)).toBe(false);
+    expect(canAccessExceptionQueue({ role: "admin", active: 0 })).toBe(false);
+    expect(() =>
+      assertCanAccessExceptionQueue({ role: "vendor_rep", active: 1 }),
+    ).toThrow(/supply_chain, category_owner, or admin/);
+  });
+});
+
+describe("reconcile and timeout exceptions", () => {
   let dbPath: string;
   let prevPath: string | undefined;
 
@@ -70,40 +78,41 @@ describe("reconcileCase + gap exceptions", () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
-  it("seeded EP case has a gap of 1 (extra sheath)", async () => {
+  async function freshDb() {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
-    const { db } = created;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = created;
+    return created.db;
+  }
 
+  async function staleCase(db: Awaited<ReturnType<typeof freshDb>>) {
+    const c = await openCase({ departmentId: 1, roomId: 1 }, 1, db);
+    await db
+      .update(cases)
+      .set({ openedAt: "2020-01-01T00:00:00" })
+      .where(eq(cases.id, c.id));
+    return c;
+  }
+
+  it("seeded EP case: 6 taken, 1 returned, 5 used; no gap exceptions", async () => {
+    const db = await freshDb();
     const recon = await reconcileCase(1, db);
-    expect(recon.taken).toBe(6);
-    expect(recon.used + recon.wasted).toBe(4);
-    expect(recon.returned).toBe(1);
-    expect(recon.gap).toBe(1);
-    expect(recon.balanced).toBe(false);
+    expect(recon).toMatchObject({ taken: 6, returned: 1, used: 5 });
 
-    const seeded = await listExceptions(
-      { type: "taken_not_scanned_or_returned", status: "open" },
-      db,
-    );
-    expect(seeded.some((e) => e.productId === 1)).toBe(true);
+    const all = await db.select({ type: exceptions.type }).from(exceptions);
+    expect(
+      all.every((row) =>
+        ["expired_on_shelf", "case_open_past_timeout", "bill_only_unmapped"].includes(
+          row.type,
+        ),
+      ),
+    ).toBe(true);
   });
 
-  it("closing a case with a gap creates taken_not_scanned_or_returned", async () => {
-    const { createDb } = await import("@/db");
-    const created = createDb(dbPath);
-    const { db } = created;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = created;
-
-    const c = await openCase(
-      { departmentId: 1, roomId: 1, procedureTypeId: 1 },
-      1,
-      db,
-    );
-    // 3 pulled, 2 used + 1 returned → balanced (3=2+1)
+  it("closing a case with unreturned items creates no exception", async () => {
+    const db = await freshDb();
+    const c = await openCase({ departmentId: 1, roomId: 1, procedureTypeId: 1 }, 1, db);
     await recordPull(
       {
         caseId: c.id,
@@ -130,18 +139,6 @@ describe("reconcileCase + gap exceptions", () => {
       1,
       db,
     );
-    await closeoutUsed(
-      {
-        caseId: c.id,
-        productId: 1,
-        locationId: 1,
-        lot: "0001681425",
-        expiry: "2028-11-01",
-        qty: 2,
-      },
-      1,
-      db,
-    );
     await closeoutReturned(
       {
         caseId: c.id,
@@ -154,104 +151,79 @@ describe("reconcileCase + gap exceptions", () => {
       1,
       db,
     );
-    const balanced = await reconcileCase(c.id, db);
-    expect(balanced.taken).toBe(3);
-    expect(balanced.used).toBe(2);
-    expect(balanced.returned).toBe(1);
-    expect(balanced.balanced).toBe(true);
 
-    // Separate case with intentional gap
-    const gappy = await openCase({ departmentId: 1, roomId: 1 }, 1, db);
-    await recordPull(
-      {
-        caseId: gappy.id,
-        rawBarcode: "VC-ABL-01",
-        productId: 3,
-        locationId: 1,
-        lot: "VCABL1001",
-        expiry: "2027-06-01",
-        qty: 1,
-      },
-      1,
-      db,
-    );
-    // no close-out
-    await closeCase(gappy.id, 1, db);
-
-    const gaps = await db
-      .select()
-      .from(exceptions)
-      .where(
-        and(
-          eq(exceptions.type, "taken_not_scanned_or_returned"),
-          eq(exceptions.productId, 3),
-          eq(exceptions.status, "open"),
-        ),
-      );
-    expect(gaps.length).toBeGreaterThanOrEqual(1);
-    expect(gaps[0]?.sourceContainer).toBe(1);
+    const before = (await db.select().from(exceptions)).length;
+    await closeCase(c.id, 1, db);
+    expect((await db.select().from(exceptions)).length).toBe(before);
+    expect(await reconcileCase(c.id, db)).toMatchObject({
+      taken: 3,
+      returned: 1,
+      used: 2,
+    });
+    await expect(closeCase(c.id, 1, db)).rejects.toThrow(/Only open cases/);
   });
 
-  it("resolving seeded gap writes audit; timeout creates gaps for stale open cases", async () => {
-    const { createDb } = await import("@/db");
-    const created = createDb(dbPath);
-    const { db } = created;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__kuDb = created;
+  it("a case open past the timeout gets one exception, audited and linked to the case", async () => {
+    const db = await freshDb();
+    const stale = await staleCase(db);
+    const recent = await openCase({ departmentId: 1, roomId: 2 }, 1, db);
 
-    const openGaps = await listExceptions(
-      { type: "taken_not_scanned_or_returned", status: "open" },
-      db,
-    );
-    const seeded = openGaps.find((e) => e.id === 1);
-    expect(seeded).toBeTruthy();
+    const run1 = await flagCasesOpenPastTimeout(2, new Date(), db);
+    expect(run1.hours).toBe(24);
+    expect(run1.staleCaseIds).toContain(stale.id);
+    expect(run1.staleCaseIds).not.toContain(recent.id);
+    expect(run1.createdExceptionIds).toHaveLength(1);
 
-    await resolveException(
-      {
-        exceptionId: 1,
-        resolutionNote: "Confirmed sheath used; documented after review",
-      },
-      2,
-      db,
-    );
-
+    const [row] = await db
+      .select()
+      .from(exceptions)
+      .where(eq(exceptions.id, run1.createdExceptionIds[0]!));
+    expect(row).toMatchObject({
+      type: "case_open_past_timeout",
+      sourceContainer: 1,
+      status: "open",
+      productId: null,
+    });
     const audits = await db
       .select()
       .from(auditLog)
-      .where(eq(auditLog.entity, "exceptions"));
-    expect(
-      audits.some(
-        (a) =>
-          a.entityId === 1 &&
-          a.action === "resolve" &&
-          a.detail?.includes("Confirmed sheath used"),
-      ),
-    ).toBe(true);
+      .where(and(eq(auditLog.entity, "exceptions"), eq(auditLog.entityId, row!.id)));
+    expect(audits[0]?.action).toBe(CASE_TIMEOUT_ACTION);
+    expect(audits[0]?.detail).toMatch(new RegExp(`^case=${stale.id} `));
 
-    // Stale open case: open with old openedAt via direct insert path — use createGap after timeout helper
-    const stale = await openCase({ departmentId: 1 }, 1, db);
-    await recordPull(
-      {
-        caseId: stale.id,
-        rawBarcode: "RSS802",
-        productId: 1,
-        locationId: 1,
-        lot: "EXPIRINGSOON1",
-        expiry: "2099-01-01",
-        qty: 1,
-      },
-      1,
+    const listed = await listExceptions({ type: "case_open_past_timeout" }, db);
+    expect(listed.find((e) => e.id === row!.id)?.caseId).toBe(stale.id);
+
+    const run2 = await flagCasesOpenPastTimeout(2, new Date(), db);
+    expect(run2.createdExceptionIds).toHaveLength(0);
+
+    await resolveException(
+      { exceptionId: row!.id, resolutionNote: "Tech closed it late" },
+      2,
       db,
     );
-    // Force opened_at into the past
-    const { cases } = await import("@/db/schema");
+    const run3 = await flagCasesOpenPastTimeout(2, new Date(), db);
+    expect(run3.createdExceptionIds).toHaveLength(0);
+  });
+
+  it("closed and aborted cases are never flagged; the seeded stale case is already flagged", async () => {
+    const db = await freshDb();
+    const closed = await staleCase(db);
+    await closeCase(closed.id, 1, db);
+    const aborted = await openCase({ departmentId: 1, roomId: 2 }, 1, db);
+    await abortCase(aborted.id, 1, db);
     await db
       .update(cases)
-      .set({ openedAt: "2020-01-01T00:00:00" })
-      .where(eq(cases.id, stale.id));
+      .set({ openedAt: "2019-01-01T00:00:00" })
+      .where(eq(cases.id, aborted.id));
 
-    const timed = await reconcileTimedOutOpenCases(2, new Date(), db);
-    expect(timed.hours).toBe(24);
-    expect(timed.results.some((r) => r.caseId === stale.id)).toBe(true);
+    const run = await flagCasesOpenPastTimeout(2, new Date(), db);
+    expect(run.staleCaseIds).not.toContain(closed.id);
+    expect(run.staleCaseIds).not.toContain(aborted.id);
+    expect(run.createdExceptionIds).toHaveLength(0);
+
+    const seeded = await listExceptions({ type: "case_open_past_timeout", status: "open" }, db);
+    expect(seeded).toHaveLength(1);
+    expect(run.staleCaseIds).toContain(seeded[0]!.caseId);
   });
 });

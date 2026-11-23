@@ -19,6 +19,7 @@ export type StockViewRow = {
   description: string;
   vendorId: number;
   vendorName: string;
+  hospitalOwned: boolean;
   locationId: number | null;
   locationName: string | null;
   lot: string | null;
@@ -66,6 +67,7 @@ export async function listStockView(
       description: products.description,
       vendorId: products.vendorId,
       vendorName: vendors.name,
+      kuOwned: products.kuOwned,
     })
     .from(products)
     .innerJoin(vendors, eq(products.vendorId, vendors.id));
@@ -102,6 +104,7 @@ export async function listStockView(
       description: p.description,
       vendorId: p.vendorId,
       vendorName: p.vendorName,
+      hospitalOwned: p.kuOwned === 1,
       locationId: r.locationId,
       locationName:
         r.locationId != null ? (locById.get(r.locationId)?.name ?? null) : null,
@@ -128,28 +131,36 @@ export async function listStockView(
   return rows;
 }
 
-/** Create open expired_on_shelf exceptions for expired lots still on hand. */
+/**
+ * Create open expired_on_shelf exceptions for expired lots still on hand.
+ * Pass `stock` when the caller already has the stock view, to skip a rebuild.
+ */
 export async function ensureExpiredOnShelfExceptions(
   userId: number | null,
   today: Date = new Date(),
   db: AppDb = getDb(),
+  stock?: StockViewRow[],
 ) {
-  const rows = await listStockView({ flag: "expired" }, today, db);
+  const rows = stock
+    ? stock.filter((row) => row.flag === "expired")
+    : await listStockView({ flag: "expired" }, today, db);
   const created: number[] = [];
+  if (rows.length === 0) return { expiredLots: 0, createdExceptionIds: created };
+
+  const openRows = await db
+    .select({ productId: exceptions.productId })
+    .from(exceptions)
+    .where(
+      and(
+        eq(exceptions.type, "expired_on_shelf"),
+        eq(exceptions.status, "open"),
+      ),
+    );
+  const flagged = new Set(openRows.map((row) => row.productId));
 
   for (const row of rows) {
-    const existing = await db
-      .select()
-      .from(exceptions)
-      .where(
-        and(
-          eq(exceptions.type, "expired_on_shelf"),
-          eq(exceptions.productId, row.productId),
-          eq(exceptions.status, "open"),
-        ),
-      )
-      .limit(1);
-    if (existing.length > 0) continue;
+    if (flagged.has(row.productId)) continue;
+    flagged.add(row.productId);
 
     const [exc] = await db
       .insert(exceptions)

@@ -1,13 +1,20 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useActionState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   assignOwnerAction,
   resolveExceptionAction,
-  runTimeoutReconcileAction,
   type ExceptionActionState,
 } from "@/app/exceptions/actions";
+
+const TYPE_LABELS: Record<string, string> = {
+  case_open_past_timeout: "Case open past timeout",
+  expired_on_shelf: "Expired on shelf",
+  bill_only_unmapped: "Unknown or unmapped barcode",
+  not_on_any_contract: "Not on any contract",
+};
 
 export type ExceptionRow = {
   id: number;
@@ -23,6 +30,8 @@ export type ExceptionRow = {
   catalogNumber: string | null;
   productDescription: string | null;
   vendorName: string | null;
+  caseId: number | null;
+  barcode: string | null;
 };
 
 type Owner = { id: number; name: string; role: string };
@@ -115,14 +124,13 @@ export function ExceptionQueue({
   filters: { type: string; container: string; status: string };
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [timeoutMsg, setTimeoutMsg] = useState("");
-  const [, start] = useTransition();
 
-  function updateFilter(key: string, value: string) {
-    const next = new URLSearchParams(searchParams.toString());
-    if (!value) next.delete(key);
-    else next.set(key, value);
+  function updateFilter(key: keyof typeof filters, value: string) {
+    const next = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...filters, [key]: value })) {
+      if (v) next.set(k, v);
+    }
+    if (!next.has("status")) next.set("status", "");
     router.push(`/exceptions?${next.toString()}`);
   }
 
@@ -137,17 +145,11 @@ export function ExceptionQueue({
             onChange={(e) => updateFilter("type", e.target.value)}
           >
             <option value="">All</option>
-            <option value="taken_not_scanned_or_returned">
-              taken_not_scanned_or_returned
-            </option>
-            <option value="closeout_exceeds_taken">closeout_exceeds_taken</option>
-            <option value="opened_or_wasted">opened_or_wasted</option>
-            <option value="expired_on_shelf">expired_on_shelf</option>
-            <option value="not_on_any_contract">not_on_any_contract</option>
-            <option value="bill_only_unmapped">bill_only_unmapped</option>
-            <option value="missing_from_item_master">
-              missing_from_item_master
-            </option>
+            {Object.entries(TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </label>
         <label className="text-sm">
@@ -176,21 +178,6 @@ export function ExceptionQueue({
             <option value="resolved">resolved</option>
           </select>
         </label>
-        <button
-          type="button"
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm"
-          onClick={() =>
-            start(async () => {
-              const r = await runTimeoutReconcileAction();
-              setTimeoutMsg(r.message);
-            })
-          }
-        >
-          Run timeout check
-        </button>
-        {timeoutMsg ? (
-          <p className="w-full text-sm text-slate-700">{timeoutMsg}</p>
-        ) : null}
       </div>
 
       <div className="overflow-x-auto">
@@ -200,7 +187,7 @@ export function ExceptionQueue({
               <th className="py-2 pr-3 font-medium">ID</th>
               <th className="py-2 pr-3 font-medium">Type</th>
               <th className="py-2 pr-3 font-medium">Ctr</th>
-              <th className="py-2 pr-3 font-medium">Product</th>
+              <th className="py-2 pr-3 font-medium">Detail</th>
               <th className="py-2 pr-3 font-medium">Status</th>
               <th className="py-2 pr-3 font-medium">Owner</th>
               <th className="py-2 font-medium">Actions</th>
@@ -210,12 +197,20 @@ export function ExceptionQueue({
             {rows.map((r) => (
               <tr key={r.id} className="border-b border-slate-200 align-top">
                 <td className="py-2 pr-3">{r.id}</td>
-                <td className="py-2 pr-3 font-mono text-xs">{r.type}</td>
+                <td className="py-2 pr-3">{TYPE_LABELS[r.type] ?? r.type}</td>
                 <td className="py-2 pr-3">{r.sourceContainer}</td>
                 <td className="py-2 pr-3">
-                  {r.vendorName
-                    ? `${r.vendorName} ${r.catalogNumber}`
-                    : (r.productId ?? "—")}
+                  {r.caseId != null ? (
+                    <Link href={`/cases/${r.caseId}`} className="underline">
+                      Case #{r.caseId}
+                    </Link>
+                  ) : r.barcode ? (
+                    <span className="font-mono text-xs">{r.barcode}</span>
+                  ) : r.vendorName ? (
+                    `${r.vendorName} ${r.catalogNumber}`
+                  ) : (
+                    (r.productId ?? "—")
+                  )}
                 </td>
                 <td className="py-2 pr-3">{r.status}</td>
                 <td className="py-2 pr-3">{r.ownerName ?? "—"}</td>

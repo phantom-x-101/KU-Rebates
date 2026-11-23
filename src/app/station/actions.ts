@@ -40,6 +40,7 @@ export async function scanAction(input: {
   caseId: number | null;
   lot?: string;
   expiry?: string;
+  pendingRaw?: string | null;
 }): Promise<StationOutcome> {
   const user = await requireStationUser();
   const result = await applyStationScan(
@@ -49,6 +50,7 @@ export async function scanAction(input: {
       caseId: input.caseId,
       lot: input.lot,
       expiry: input.expiry,
+      pendingRaw: input.pendingRaw,
     },
     user.id,
   );
@@ -89,7 +91,6 @@ export async function openStationCaseAction(input: {
 
 export async function closeEpCaseAction(caseId: number): Promise<{
   closed: boolean;
-  balanced: boolean;
   message: string;
   reconciliation: CaseReconciliation | null;
 }> {
@@ -97,18 +98,15 @@ export async function closeEpCaseAction(caseId: number): Promise<{
     const user = await requireStationUser();
     const reconciliation = await closeStationCase(caseId, user.id);
     revalidateDemo();
+    revalidatePath("/cases");
     return {
       closed: true,
-      balanced: reconciliation.balanced,
-      message: reconciliation.balanced
-        ? "Check passed. Case closed."
-        : `Gap of ${reconciliation.gap}. Taken ${reconciliation.taken}, returned ${reconciliation.returned}. Exception recorded.`,
+      message: `Used (not returned): ${reconciliation.used} · Returned: ${reconciliation.returned}`,
       reconciliation,
     };
   } catch (error) {
     return {
       closed: false,
-      balanced: false,
       message: error instanceof Error ? error.message : "Could not close the case",
       reconciliation: null,
     };

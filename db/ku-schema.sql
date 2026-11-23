@@ -67,6 +67,7 @@ CREATE TABLE products (
   category       TEXT,                                -- sheath, closure, ablation catheter, mapping catheter...
   unit_price     REAL,                                -- contract or list price used for expected rebate
   in_item_master INTEGER NOT NULL DEFAULT 0,          -- 0 = contracted-but-not-mastered candidate
+  ku_owned       INTEGER NOT NULL DEFAULT 0,          -- 1 = hospital-owned (e.g. sterilized instrument pack), not vendor stock
   UNIQUE (vendor_id, catalog_number)
 );
 
@@ -269,9 +270,8 @@ CREATE TABLE exceptions (
   id               INTEGER PRIMARY KEY,
   source_container INTEGER NOT NULL CHECK (source_container IN (1,2,3)),
   type             TEXT NOT NULL CHECK (type IN (
-                     'not_on_any_contract','bill_only_unmapped','missing_from_item_master',
-                     'opened_or_wasted','taken_not_scanned_or_returned','expired_on_shelf',
-                     'closeout_exceeds_taken')),
+                     'case_open_past_timeout','expired_on_shelf','bill_only_unmapped',
+                     'not_on_any_contract','missing_from_item_master')),
   scan_id          INTEGER REFERENCES scans(id),
   product_id       INTEGER REFERENCES products(id),
   contract_line_id INTEGER REFERENCES contract_lines(id),

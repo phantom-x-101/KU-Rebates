@@ -23,9 +23,9 @@ Companion to `ku-schema.sql`. Source: *ku-rebate-workflowv8.pdf*.
 
 1. **Tech opens a case** at the node (`cases`: department, room, procedure type).
 2. **Tech scans each used item** (`scans`). The app parses the barcode, then looks up `product_identifiers` to set `product_id`.
-   - GS1 barcode: item, lot and expiry come from the barcode (`lot_expiry_source = 'barcode'`).
-   - HIBC barcode: item only. Lot and expiry are read from a label photo (`'photo'`), or typed in (`'manual'`).
-3. **Opened or wasted items** are scanned with `status = 'wasted'` and also create an `exceptions` row of type `opened_or_wasted`. An aborted case sets `cases.status = 'aborted'`.
+   - GS1 barcode: item, lot and expiry come from the barcode (`lot_expiry_source = 'barcode'`). Real labels split this into a GTIN-only code and a (17)+(10) code; the lot scan attaches to the item scanned before it.
+   - HIBC barcode: the primary (`+M729…`) is the item; the secondary (`+$$3 YYMMDD lot`) gives lot and expiry (`'barcode'`). Without it, lot and expiry are picked from a list or typed in (`'manual'`). Photo reading (`'photo'`) is a later feature.
+3. **Close-out.** Items that come back are scanned as returned. Anything taken and not returned counts as used; closing a case creates no exception. A case still open after `case_closeout_timeout_hours` creates a `case_open_past_timeout` exception. An aborted case sets `cases.status = 'aborted'`.
 4. **Identification failures** create exceptions:
    - no product match: `bill_only_unmapped`
    - product found but `in_item_master = 0` and on a contract: `missing_from_item_master`
@@ -51,7 +51,7 @@ If `count_basis` is `purchased` or `invoiced`, step 5 must read from `po_lines` 
 
 ## Screens (day one)
 
-1. **Node: scan.** Open case, scan item, show the item identified, mark wasted, close case.
+1. **Node: scan.** Open case, scan item, show the item identified, scan returns, close case.
 2. **Contract progress.** One card per contract with a bar per line: counted vs required, forecast, at-risk flag.
 3. **Alerts.** Open alerts for the category owner with a decision field.
 4. **Exception queue.** Filter by type and source container, assign an owner, resolve with a note.
@@ -66,8 +66,11 @@ If `count_basis` is `purchased` or `invoiced`, step 5 must read from `po_lines` 
   - Line C (implant, $25K each): counted 55
   - Slide 9's walkthrough: forecast 48, one unit found in PO matching (49), KU orders one more (50).
 - **Real labels from the packaging photos (slide 6):**
-  - Terumo Pinnacle sheath 8 Fr, item RSS802, lot 0001681425, expiry 1 Nov 2028 (GS1)
-  - Cardiva Vascade MVP closure, item 800-612C, lot G612C260420B, expiry 9 Apr 2028 (HIBC: lot and expiry come from the label photo)
+  - Terumo Pinnacle Introducer Sheath 8 Fr, RSS802, GTIN 00389701007496, lot 0001681425, expiry 1 Nov 2028 (GS1)
+  - Terumo Pinnacle Introducer Sheath 11 Fr, RSS106, GTIN 00389701007762, lot 0001476667, expiry 1 Jul 2028 (GS1)
+  - Cardiva Vascade MVP closure, 800-612C, HIBC `+M729800612C0`, lot G612C260420B, expiry 9 Apr 2028 (Code 39 HIBC, primary plus `+$$3` secondary)
+  - NuVision NAV Ultrasound Catheter, FG12081, GTIN 10846835026559, lot 31982149L, expiry 2 Jul 2027 (GS1; manufacturer to confirm)
+  - Pack EP Lab SMALL DECA Cable, CB3410CT: hospital-owned (`products.ku_owned = 1`), on no contract. Sterile date 2026-09-16 as read from the pack; load number not captured. Sterile date 2026-09-16 as read from the pack; load number not captured
 - **Departments:** EP lab (pilot), Cath lab (next), Ortho (later).
 - **Case example (slide 6):** one EP case, 5 items: sheath (Terumo), closure (Cardiva), ablation catheter (Vendor C), mapping catheter x2 (Vendor C).
 - **Settings:** `epic_integration = off`, `workday_integration = off`.

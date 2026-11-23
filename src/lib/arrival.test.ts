@@ -117,4 +117,16 @@ describe("scan on arrival", () => {
     )?.onHand;
     expect(afterLot).toBe(beforeLot + 1);
   });
+
+  it("identifies Cardiva when the scan has one extra trailing 0", async () => {
+    const { createDb } = await import("@/db");
+    const created = createDb(dbPath);
+    const { db } = created;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__kuDb = created;
+
+    const { product } = await identifyProduct("+M729800612C00", db);
+    expect(product?.catalogNumber).toBe("800-612C");
+    expect(product?.matchedBy).toBe("hibc");
+  });
 });

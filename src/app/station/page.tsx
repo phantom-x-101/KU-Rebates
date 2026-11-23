@@ -47,7 +47,7 @@ export default async function StationPage({
         ...DEMO_LABELS,
         {
           id: "expiring",
-          title: "Expiring Terumo lot (not on this case)",
+          title: "Expiring Vendor C mapping lot (placeholder)",
           caption: `EXPIRINGSOON1 · exp ${expiring.expiry}`,
           barcode: expiringLotBarcode(expiring.expiry),
           symbology: "gs1-128" as const,
@@ -63,7 +63,7 @@ export default async function StationPage({
           <h1 className="text-3xl font-bold tracking-tight">Scan station</h1>
           <p className="text-sm text-slate-600">
             {givenName(user.name)} · {user.role}. Arrive stock, pull it for a case, then
-            return what comes back. The check is taken = returned.
+            return what comes back. Anything not returned counts as used.
           </p>
         </div>
         <Link href="/demo/labels" className="text-sm font-semibold underline">

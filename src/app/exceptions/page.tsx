@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { ExceptionQueue } from "@/components/ExceptionQueue";
 import {
@@ -6,6 +5,7 @@ import {
   listAssignableOwners,
   listExceptions,
 } from "@/lib/exceptions";
+import { flagCasesOpenPastTimeout } from "@/lib/reconcile";
 import { getCurrentUser } from "@/lib/session";
 import { ensureExpiredOnShelfExceptions, listStockView } from "@/lib/stock-view";
 
@@ -37,16 +37,18 @@ export default async function ExceptionsPage({
   const container = sp.container ?? "";
   const status = sp.status ?? "open";
 
-  await ensureExpiredOnShelfExceptions(user!.id);
+  const now = new Date();
+  const stock = await listStockView({}, now);
+  await ensureExpiredOnShelfExceptions(user!.id, now, undefined, stock);
+  await flagCasesOpenPastTimeout(user!.id, now);
 
-  const [rows, owners, stock] = await Promise.all([
+  const [rows, owners] = await Promise.all([
     listExceptions({
       type: type || undefined,
       sourceContainer: container ? Number(container) : undefined,
       status: status || undefined,
     }),
     listAssignableOwners(),
-    listStockView({}),
   ]);
   const lotWatch = stock.filter(
     (row) => row.flag === "expiring_soon" || row.flag === "expired",
@@ -57,8 +59,9 @@ export default async function ExceptionsPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Exception queue</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Case gaps, wasted items, and expired lots are rows below. Expiring lots
-          are listed with them. Assign an owner and resolve with a note.
+          Cases left open past the timeout, expired lots, and unknown barcodes
+          are rows below. Expiring lots are listed with them. Assign an owner
+          and resolve with a note.
         </p>
       </div>
       <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -68,7 +71,7 @@ export default async function ExceptionsPage({
         ) : (
           <ul className="mt-2 space-y-1 text-sm">
             {lotWatch.map((row) => (
-              <li key={`${row.productId}-${row.lot}-${row.expiry}`}>
+              <li key={`${row.productId}-${row.locationId}-${row.lot}-${row.expiry}`}>
                 <span
                   className={
                     row.flag === "expired"
@@ -83,7 +86,7 @@ export default async function ExceptionsPage({
                       : "Expiring soon"}
                 </span>
                 {" · "}
-                {row.vendorName} {row.catalogNumber} · lot {row.lot} · exp {row.expiry} ·
+                {row.description} · {row.catalogNumber} · lot {row.lot} · exp {row.expiry} ·
                 on hand {row.onHand}
                 {row.flag === "expired" ? " · rep pays" : ""}
               </li>
@@ -91,13 +94,11 @@ export default async function ExceptionsPage({
           </ul>
         )}
       </section>
-      <Suspense fallback={<p className="text-sm text-slate-500">Loading…</p>}>
-        <ExceptionQueue
-          rows={rows}
-          owners={owners}
-          filters={{ type, container, status }}
-        />
-      </Suspense>
+      <ExceptionQueue
+        rows={rows}
+        owners={owners}
+        filters={{ type, container, status }}
+      />
     </div>
   );
 }

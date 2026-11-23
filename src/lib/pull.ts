@@ -4,6 +4,9 @@ import { stockEvents } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { getCase } from "@/lib/cases";
 import { identifyProduct } from "@/lib/arrival";
+import { isLotExpiryOnly } from "@/lib/barcode";
+import { flagNotOnAnyContract, recordUnmappedBarcode } from "@/lib/exceptions";
+import { listPullableLots, type PullableLot } from "@/lib/stock";
 
 export const recordPullSchema = z.object({
   caseId: z.coerce.number().int().positive(),
@@ -63,10 +66,30 @@ export async function recordPull(
     },
     db,
   );
+  await flagNotOnAnyContract(data.productId, "pull", userId, db);
 
   return event;
 }
 
-export async function lookupForPull(rawBarcode: string, db: AppDb = getDb()) {
-  return identifyProduct(rawBarcode, db);
+/**
+ * Identify a pull scan. When the barcode has no lot or expiry (HIBC), `lots`
+ * lists what is on hand for the product, earliest expiry first.
+ */
+export async function lookupForPull(
+  rawBarcode: string,
+  userId: number | null,
+  db: AppDb = getDb(),
+) {
+  const { parsed, product } = await identifyProduct(rawBarcode, db);
+  if (!product) {
+    if (!isLotExpiryOnly(parsed)) {
+      await recordUnmappedBarcode(rawBarcode, "pull", userId, db);
+    }
+    return { parsed, product, lots: [] as PullableLot[] };
+  }
+  const lots =
+    parsed.lot && parsed.expiry
+      ? []
+      : await listPullableLots(product.productId, new Date(), db);
+  return { parsed, product, lots };
 }

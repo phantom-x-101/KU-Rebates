@@ -28,7 +28,7 @@ Pain points seen on site: shelves look like a pantry and are hard to read at a g
 
 - **Scan on arrival**: stock is logged as it reaches the shelf or room (item, lot, expiry, location, time).
 - **Scan when pulled**: items are logged as the tech collects them for a case (linked to a case).
-- **Case close-out (thin slice of Container 2)**: after the case every item taken is marked **used**, **wasted** (opened) or **returned**. The tech does this at the node. The full Epic-adjacent scan flow is built later.
+- **Case close-out (thin slice of Container 2)**: after the case the tech scans back each item that is **returned**. Anything taken and not returned counts as **used**. The full Epic-adjacent scan flow is built later.
 - **Vendor portal**: each rep sees only their own stock, usage and expiry dates, with no on-site audit.
 - **Expiry alerts**: the rep is alerted before expiry (days set per vendor). Expired stock is flagged "expired on shelf: rep pays".
 - **Reorder view**: shows par level vs on-hand and suggests when stock is low. KU places the order; Pycube never does.
@@ -36,17 +36,20 @@ Pain points seen on site: shelves look like a pantry and are hard to read at a g
 
 ## The check: Taken = used + returned
 
-For each case: quantity taken (pulled) must equal used + wasted + returned. Any gap creates an exception, `taken_not_scanned_or_returned`, with `source_container = 1`. A match moves on to Container 3 (not built yet).
+For each case: taken (pulled) = returned + used, where used is everything not returned. There is no gap, so closing a case never creates an exception. The close shows "Used (not returned): N" and "Returned: N". The result moves on to Container 3 (not built yet).
 
-Example from the document: 3 taken for the case = 2 used + 1 returned.
+Example from the document: 3 taken for the case, 1 returned, so 2 used.
 
 ## Exceptions this build creates
 
 | Type | When | Owner |
 |---|---|---|
-| `taken_not_scanned_or_returned` | Pulled for a case but not closed out as used, wasted or returned | supply_chain |
+| `case_open_past_timeout` | A case is still open after the close-out timeout (setting `case_closeout_timeout_hours`, default 24). Checked when the Exceptions page loads; one row per case | supply_chain |
 | `expired_on_shelf` | On-hand lot past its expiry date | supply_chain (the rep pays) |
-| `opened_or_wasted` | Item closed out as wasted | supply_chain |
+| `bill_only_unmapped` | A scanned barcode matches no product (station, arrival or pull). One open row per barcode; resolved when the product is added at the station. A lot-and-expiry label alone never opens one | supply_chain |
+| `not_on_any_contract` | A product with no contract line is arrived or pulled (for example the hospital-owned DECA cable pack). One open row per product | supply_chain |
+
+Real labels carry two separate barcodes. The item barcode is GS1 with only (01) GTIN, or HIBC primary `+LIC product UoM check` (Code 39). The lot barcode is GS1 with only (17) expiry and (10) lot, or HIBC secondary `+$$3 YYMMDD lot link check`. The station takes the item scan, waits, and attaches the next lot scan to it. The HIBC link character must match the item's check character. If no lot label is scanned, the tech picks the lot from a list (pull: lots on hand, earliest expiry first; return: lots still out on the case) or types it on arrival.
 
 ## Roles
 
@@ -72,8 +75,13 @@ EP lab is mapped. Cath lab is next (shelves, hanging stock and blue bags). Ortho
 
 ## Demo seed data (placeholders unless noted)
 
-- Vendors: Terumo, Cardiva (both real labels), Vendor C (placeholder)
-- Terumo Pinnacle sheath 8 Fr, item RSS802, lot 0001681425, expiry 2028-11-01 (GS1)
-- Cardiva Vascade MVP closure, item 800-612C, lot G612C260420B, expiry 2028-04-09 (HIBC)
-- Vendor C ablation catheter and mapping catheter (placeholders)
-- One EP case: 5 items pulled (sheath, closure, ablation catheter, mapping catheter x2); close-out: 4 used, 1 returned; one lot seeded as expiring within 30 days to demonstrate the alert; one seeded gap to demonstrate the exception
+- Real products from physical packages (digits read from photos; confirm with a scan). Prices and par levels are placeholders.
+  - Terumo Pinnacle Introducer Sheath 8 Fr, REF RSS802, GTIN 00389701007496, lot 0001681425, expiry 2028-11-01 (GS1)
+  - Terumo Pinnacle Introducer Sheath 11 Fr, REF RSS106, GTIN 00389701007762, lot 0001476667, expiry 2028-07-01 (GS1)
+  - Cardiva Vascade MVP closure, catalog 800-612C, HIBC item `+M729800612C0`, lot G612C260420B, expiry 2028-04-09 (Code 39 HIBC)
+  - NuVision NAV Ultrasound Catheter, REF FG12081, GTIN 10846835026559, lot 31982149L, expiry 2027-07-02 (GS1). Vendor shown as "NuVision (manufacturer to confirm)"
+  - Pack EP Lab SMALL DECA Cable, CB3410CT: hospital-owned (`products.ku_owned = 1`), vendor "In-house", on no contract. Sterile date 2026-09-16 as read from the pack. Lot SPD-PLACEHOLDER-1 stands in for the unread load number
+- Vendor reps: Terry (Terumo), Pat (Cardiva), Nico (NuVision), plus placeholder reps for Vendors C to G
+- Placeholder Vendors C to G for all other stock. The expiring-soon lot (EXPIRINGSOON1) and the expired lot (EXPIRED-SHELF) sit on the placeholder Vendor C mapping catheter
+- One EP case: 6 items pulled (sheath x2, closure, ablation catheter, mapping catheter x2); 1 returned, so 5 used
+- One Cath 1 case left open two days ago (case open past timeout) and one unknown barcode `+H999DEMO01` (placeholder) to demonstrate the exceptions

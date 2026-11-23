@@ -15,7 +15,6 @@ import {
   appSettings,
   cases,
   departments,
-  exceptions,
   expiryRules,
   productAccess,
   productIdentifiers,
@@ -28,6 +27,16 @@ import {
   users,
   vendors,
 } from "../src/db/schema";
+import {
+  CARDIVA_VASCADE,
+  DECA_CABLE_PACK,
+  IN_HOUSE_VENDOR_ID,
+  NUVISION_NAV,
+  NUVISION_VENDOR_ID,
+  REAL_PRODUCTS,
+  TERUMO_11FR,
+  TERUMO_8FR,
+} from "../src/lib/real-products";
 import { seedLabHistory } from "./demo-history";
 
 const dbPath = process.env.KU_DB_PATH ?? path.join(process.cwd(), "data", "ku.sqlite");
@@ -53,13 +62,15 @@ export async function seedDemo(db: AppDb) {
     { id: 1, name: "Terumo" },
     { id: 2, name: "Cardiva" },
     { id: 3, name: "Vendor C" }, // placeholder
+    { id: NUVISION_VENDOR_ID, name: "NuVision (manufacturer to confirm)" },
+    { id: IN_HOUSE_VENDOR_ID, name: "In-house" },
   ]);
   await audit({
     userId: null,
     container: 1,
     entity: "vendors",
     action: "seed",
-    detail: "Terumo, Cardiva, Vendor C (placeholder)",
+    detail: "Terumo, Cardiva, NuVision (manufacturer to confirm), in-house, Vendor C (placeholder)",
   }, db);
 
   // --- Users (five roles, no passwords) ---
@@ -118,25 +129,20 @@ export async function seedDemo(db: AppDb) {
   }, db);
 
   // --- Products ---
+  // Real products from physical packages (prices are placeholders).
+  await db.insert(products).values(
+    REAL_PRODUCTS.map((item) => ({
+      id: item.id,
+      vendorId: item.vendorId,
+      catalogNumber: item.catalogNumber,
+      description: item.description,
+      category: item.category,
+      unitPrice: item.unitPrice,
+      inItemMaster: 1,
+      kuOwned: item.hospitalOwned ? 1 : 0,
+    })),
+  );
   await db.insert(products).values([
-    {
-      id: 1,
-      vendorId: 1,
-      catalogNumber: "RSS802",
-      description: "Terumo Pinnacle sheath 8 Fr",
-      category: "sheath",
-      unitPrice: 185,
-      inItemMaster: 1,
-    },
-    {
-      id: 2,
-      vendorId: 2,
-      catalogNumber: "800-612C",
-      description: "Cardiva Vascade MVP closure",
-      category: "closure",
-      unitPrice: 395,
-      inItemMaster: 1,
-    },
     {
       id: 3,
       vendorId: 3,
@@ -157,22 +163,31 @@ export async function seedDemo(db: AppDb) {
     },
   ]);
   await db.insert(productIdentifiers).values([
-    { id: 1, productId: 1, idType: "catalog", value: "RSS802" },
-    { id: 2, productId: 1, idType: "gtin", value: "00380628008026" }, // placeholder GTIN
-    { id: 3, productId: 2, idType: "catalog", value: "800-612C" },
-    { id: 4, productId: 2, idType: "hibc", value: "+H83800612C0" }, // placeholder HIBC
+    { id: 1, productId: 1, idType: "catalog", value: TERUMO_8FR.catalogNumber },
+    { id: 2, productId: 1, idType: "gtin", value: TERUMO_8FR.gtin! },
+    { id: 3, productId: 2, idType: "catalog", value: CARDIVA_VASCADE.catalogNumber },
+    { id: 4, productId: 2, idType: "hibc", value: CARDIVA_VASCADE.hibc! },
     { id: 5, productId: 3, idType: "catalog", value: "VC-ABL-01" },
     { id: 6, productId: 4, idType: "catalog", value: "VC-MAP-01" },
     // Placeholder GTINs so demo GS1 labels resolve lot and expiry.
     { id: 7, productId: 3, idType: "gtin", value: "00012345670001" },
     { id: 8, productId: 4, idType: "gtin", value: "00012345670002" },
+    // Same Cardiva code if the last character on the label is the check letter O, not a zero.
+    { id: 101, productId: 2, idType: "hibc", value: CARDIVA_VASCADE.hibc!.slice(0, -1) },
+    // Photo reading with a trailing extra 0. Lookup also matches by prefix.
+    { id: 107, productId: 2, idType: "hibc", value: `${CARDIVA_VASCADE.hibc}0` },
+    { id: 102, productId: 25, idType: "catalog", value: TERUMO_11FR.catalogNumber },
+    { id: 103, productId: 25, idType: "gtin", value: TERUMO_11FR.gtin! },
+    { id: 104, productId: 26, idType: "catalog", value: NUVISION_NAV.catalogNumber },
+    { id: 105, productId: 26, idType: "gtin", value: NUVISION_NAV.gtin! },
+    { id: 106, productId: 27, idType: "catalog", value: DECA_CABLE_PACK.catalogNumber },
   ]);
   await audit({
     userId: 4,
     container: 1,
     entity: "products",
     action: "seed",
-    detail: "RSS802, 800-612C, VC-ABL-01, VC-MAP-01",
+    detail: "RSS802, RSS106, 800-612C, FG12081, CB3410CT (hospital-owned), VC-ABL-01, VC-MAP-01",
   }, db);
 
   // --- Storage / access / expiry ---
@@ -208,11 +223,19 @@ export async function seedDemo(db: AppDb) {
       locationId: 1,
       parLevel: 1,
     },
+    ...[TERUMO_11FR, NUVISION_NAV, DECA_CABLE_PACK].map((item) => ({
+      productId: item.id,
+      departmentId: 1,
+      accessMode: "on_shelf" as const,
+      locationId: 1,
+      parLevel: item.parLevel,
+    })),
   ]);
   await db.insert(expiryRules).values([
     { id: 1, vendorId: 1, daysBefore: 60, vendorPaysExpired: 1 },
     { id: 2, vendorId: 2, daysBefore: 60, vendorPaysExpired: 1 },
     { id: 3, vendorId: 3, daysBefore: 30, vendorPaysExpired: 1 },
+    { id: 8, vendorId: NUVISION_VENDOR_ID, daysBefore: 60, vendorPaysExpired: 1 }, // placeholder terms
   ]);
 
   await db.insert(appSettings).values([
@@ -224,29 +247,28 @@ export async function seedDemo(db: AppDb) {
   ]);
 
   // --- Stock arrivals (on hand before the case) ---
-  // Terumo sheath lot: arrived 3
-  // Cardiva closure: arrived 2
-  // Vendor C ablation: arrived 2
-  // Vendor C mapping: arrived 3
-  // Extra Terumo lot expiring within 30 days: arrived 1 (for expiry demo)
+  // Real products: the lots printed on the physical packages.
+  // Vendor C ablation: arrived 2. Vendor C mapping: arrived 3.
+  // Placeholder mapping lots expiring within 30 days and already expired, so the
+  // dashboard and exceptions pages have examples.
   const soonExpiry = new Date();
   soonExpiry.setUTCDate(soonExpiry.getUTCDate() + 20);
   const soonExpiryIso = soonExpiry.toISOString().slice(0, 10);
 
   await db.insert(stockEvents).values([
-    {
-      eventType: "arrived",
-      productId: 1,
+    ...REAL_PRODUCTS.map((item, index) => ({
+      eventType: "arrived" as const,
+      productId: item.id,
       locationId: 1,
-      lot: "0001681425",
-      expiry: "2028-11-01",
-      qty: 3,
+      lot: item.lot,
+      expiry: item.expiry,
+      qty: item.qty,
       byUserId: 2,
-      at: "2026-01-10T10:00:00",
-    },
+      at: `2026-01-10T10:0${index}:00`,
+    })),
     {
       eventType: "arrived",
-      productId: 1,
+      productId: 4,
       locationId: 1,
       lot: "EXPIRINGSOON1",
       expiry: soonExpiryIso,
@@ -256,17 +278,7 @@ export async function seedDemo(db: AppDb) {
     },
     {
       eventType: "arrived",
-      productId: 2,
-      locationId: 1,
-      lot: "G612C260420B",
-      expiry: "2028-04-09",
-      qty: 2,
-      byUserId: 2,
-      at: "2026-01-10T10:10:00",
-    },
-    {
-      eventType: "arrived",
-      productId: 2,
+      productId: 4,
       locationId: 1,
       lot: "EXPIRED-SHELF",
       expiry: "2020-01-01",
@@ -303,10 +315,7 @@ export async function seedDemo(db: AppDb) {
     detail: "Initial shelf stock for EP demo",
   }, db);
 
-  // --- EP case: 5 pulled; close-out 4 used + 1 returned; one gap item left open ---
-  // Spec: sheath, closure, ablation, mapping x2 pulled.
-  // Close-out story for demo: 4 used, 1 returned on closed items;
-  // seed one extra pull (gap) as taken_not_scanned_or_returned for later phases.
+  // --- EP case: 6 pulled, 1 returned. The 5 not returned count as used. ---
   await db.insert(cases).values({
     id: 1,
     departmentId: 1,
@@ -371,7 +380,6 @@ export async function seedDemo(db: AppDb) {
       byUserId: 1,
       at: "2026-02-01T08:18:00",
     },
-    // Seeded gap: extra sheath pulled, not closed out (exception demo)
     {
       eventType: "pulled",
       productId: 1,
@@ -461,25 +469,7 @@ export async function seedDemo(db: AppDb) {
     container: 1,
     entity: "stock_events",
     action: "seed_case_flow",
-    detail: "Pulled 6 (5 planned + 1 gap), returned 1 mapping catheter",
-  }, db);
-
-  await db.insert(exceptions).values({
-    id: 1,
-    sourceContainer: 1,
-    type: "taken_not_scanned_or_returned",
-    productId: 1,
-    status: "open",
-    ownerUserId: 2,
-    createdAt: "2026-02-01T10:35:00",
-  });
-  await audit({
-    userId: 4,
-    container: 1,
-    entity: "exceptions",
-    entityId: 1,
-    action: "seed",
-    detail: "case=1 product=1 gap=1 Seeded extra sheath pulled without close-out",
+    detail: "Pulled 6, returned 1 mapping catheter; 5 not returned count as used",
   }, db);
 
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -500,7 +490,7 @@ async function main() {
   const { soonExpiryIso, todayIso } = await seedDemo(db);
   sqlite.close();
   console.log(`Seed complete (clean demo): ${dbPath}`);
-  console.log(`  Terumo lot 0001681425 on hand 1; EXPIRINGSOON1 expires ${soonExpiryIso}`);
+  console.log(`  Terumo lot 0001681425 on hand 1; placeholder EXPIRINGSOON1 expires ${soonExpiryIso}`);
   console.log(`  Today ${todayIso} has no cases, so a live case can start from the station.`);
 }
 

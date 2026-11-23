@@ -102,6 +102,7 @@ export const products = sqliteTable(
     category: text("category"),
     unitPrice: real("unit_price"),
     inItemMaster: integer("in_item_master").notNull().default(0),
+    kuOwned: integer("ku_owned").notNull().default(0),
   },
   (t) => [unique().on(t.vendorId, t.catalogNumber)],
 );
@@ -483,9 +484,8 @@ export const exceptions = sqliteTable(
     check(
       "exceptions_type_check",
       sql`${t.type} IN (
-        'not_on_any_contract','bill_only_unmapped','missing_from_item_master',
-        'opened_or_wasted','taken_not_scanned_or_returned','expired_on_shelf',
-        'closeout_exceeds_taken')`,
+        'case_open_past_timeout','expired_on_shelf','bill_only_unmapped',
+        'not_on_any_contract','missing_from_item_master')`,
     ),
     check(
       "exceptions_status_check",
