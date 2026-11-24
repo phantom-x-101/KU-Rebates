@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ScanStation } from "@/components/ScanStation";
 import { isPreviewLab, loadCaseOpenOptions } from "@/lib/case-open";
-import { DEMO_LABELS, expiringLotBarcode } from "@/lib/demo-labels";
-import { CASE_ROLES } from "@/lib/cases";
+import { DEMO_LABELS } from "@/lib/demo-labels";
 import { givenName } from "@/lib/display-name";
+import { isScanDebugEnabled, isSoftTriggerEnabled } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/session";
-import { loadStationBoard } from "@/lib/station";
+import { loadStationBoard, stationModesForRole } from "@/lib/station";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +16,19 @@ export default async function StationPage({
   searchParams: Promise<{ case?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (
-    !user ||
-    !user.active ||
-    !CASE_ROLES.includes(user.role as (typeof CASE_ROLES)[number])
-  ) {
+  if (user?.role === "vendor_rep") {
+    redirect("/vendor/check-in");
+  }
+
+  const modes = user ? stationModesForRole(user.role) : [];
+  if (!user || !user.active || modes.length === 0) {
     return (
       <div className="space-y-3">
-        <h1 className="text-3xl font-bold">Scan station</h1>
+        <h1 className="text-3xl font-bold">Check out</h1>
         <p className="text-lg text-amber-900">
-          Pick <strong>Alex</strong> in the header. The station is for tech,
-          supply chain, and admin.
+          Pick <strong>Alex</strong> to check out or return, or{" "}
+          <strong>Terry Terumo</strong>, <strong>Pat Cardiva</strong> or{" "}
+          <strong>Nico NuVision</strong> to check in.
         </p>
         <Link href="/" className="text-sm underline">
           Back to home
@@ -37,33 +40,22 @@ export default async function StationPage({
   const sp = await searchParams;
   const parsedCase = sp.case ? Number(sp.case) : null;
   const caseId = parsedCase && Number.isFinite(parsedCase) ? parsedCase : null;
-  const [board, caseOptions] = await Promise.all([
+  const [board, caseOptions, softTrigger, scanDebug] = await Promise.all([
     loadStationBoard(caseId),
     loadCaseOpenOptions(user.id),
+    isSoftTriggerEnabled(),
+    isScanDebugEnabled(),
   ]);
-  const expiring = board.stock.find((row) => row.lot === "EXPIRINGSOON1");
-  const simulate = expiring?.expiry
-    ? [
-        ...DEMO_LABELS,
-        {
-          id: "expiring",
-          title: "Expiring Vendor C mapping lot (placeholder)",
-          caption: `EXPIRINGSOON1 · exp ${expiring.expiry}`,
-          barcode: expiringLotBarcode(expiring.expiry),
-          symbology: "gs1-128" as const,
-          note: "On the shelf from seed. Pull it only if you mean to.",
-        },
-      ]
-    : DEMO_LABELS;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Scan station</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Check out</h1>
           <p className="text-sm text-slate-600">
-            {givenName(user.name)} · {user.role}. Arrive stock, pull it for a case, then
-            return what comes back. Anything not returned counts as used.
+            {givenName(user.name)} · {user.role}. Scan a tag to check it out (KU
+            pays now). Scan a checked-out tag again to return it. Barcode is the
+            fallback for untagged items.
           </p>
         </div>
         <Link href="/demo/labels" className="text-sm font-semibold underline">
@@ -71,6 +63,9 @@ export default async function StationPage({
         </Link>
       </div>
       <ScanStation
+        allowedModes={modes}
+        showCasePanel
+        allowAddProduct={false}
         caseRow={
           board.caseRow
             ? {
@@ -88,7 +83,11 @@ export default async function StationPage({
         lines={board.lines}
         stock={board.stock}
         vendors={board.vendors}
-        simulate={simulate}
+        simulate={DEMO_LABELS.filter(
+          (label) => label.id !== "unknown" || user.role === "tech",
+        )}
+        softTrigger={softTrigger}
+        scanDebug={scanDebug}
       />
     </div>
   );

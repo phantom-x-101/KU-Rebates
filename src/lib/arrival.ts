@@ -15,12 +15,14 @@ import {
   parseBarcode,
   type ParsedBarcode,
 } from "@/lib/barcode";
-import { flagNotOnAnyContract, recordUnmappedBarcode } from "@/lib/exceptions";
+import { nowEventAt } from "@/lib/event-time";
+import { recordUnmappedBarcode } from "@/lib/exceptions";
 
 export type IdentifiedProduct = {
   productId: number;
   catalogNumber: string;
   description: string;
+  vendorId: number;
   vendorName: string;
   hospitalOwned: boolean;
   matchedBy: string;
@@ -76,6 +78,7 @@ export async function identifyProduct(
       productId: products.id,
       catalogNumber: products.catalogNumber,
       description: products.description,
+      vendorId: products.vendorId,
       vendorName: vendors.name,
       kuOwned: products.kuOwned,
       idType: productIdentifiers.idType,
@@ -97,6 +100,7 @@ export async function identifyProduct(
       productId: row.productId,
       catalogNumber: row.catalogNumber,
       description: row.description,
+      vendorId: row.vendorId,
       vendorName: row.vendorName,
       hospitalOwned: row.kuOwned === 1,
       matchedBy: row.idType,
@@ -155,6 +159,7 @@ export async function recordArrival(
       lot: data.lot,
       expiry: data.expiry,
       qty: data.qty,
+      at: nowEventAt(),
       byUserId: userId,
     })
     .returning();
@@ -170,7 +175,6 @@ export async function recordArrival(
     },
     db,
   );
-  await flagNotOnAnyContract(data.productId, "arrival", userId, db);
 
   return event;
 }

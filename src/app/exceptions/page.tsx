@@ -7,7 +7,13 @@ import {
 } from "@/lib/exceptions";
 import { flagCasesOpenPastTimeout } from "@/lib/reconcile";
 import { getCurrentUser } from "@/lib/session";
-import { ensureExpiredOnShelfExceptions, listStockView } from "@/lib/stock-view";
+import {
+  ensureExpiredOnShelfExceptions,
+  ensureExpiringSoonExceptions,
+  ensureLowStockExceptions,
+  listStockView,
+} from "@/lib/stock-view";
+import { requireVendorRepScope } from "@/lib/vendor-portal";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +28,8 @@ export default async function ExceptionsPage({
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Exception queue</h1>
         <p className="text-sm text-amber-800">
-          Exception queue is limited to <strong>supply chain</strong>,{" "}
-          <strong>category owner</strong>, and <strong>admin</strong>.
+          Exception queue is limited to supply chain, category owner, admin, and
+          vendor reps (own queue only).
         </p>
         <Link href="/" className="text-sm underline">
           Back to home
@@ -32,72 +38,51 @@ export default async function ExceptionsPage({
     );
   }
 
+  const vendorScope =
+    user!.role === "vendor_rep" ? requireVendorRepScope(user).vendorId : null;
+
   const sp = await searchParams;
   const type = sp.type ?? "";
   const container = sp.container ?? "";
   const status = sp.status ?? "open";
 
   const now = new Date();
-  const stock = await listStockView({}, now);
+  const stock = await listStockView(
+    vendorScope != null ? { vendorId: vendorScope } : {},
+    now,
+  );
   await ensureExpiredOnShelfExceptions(user!.id, now, undefined, stock);
-  await flagCasesOpenPastTimeout(user!.id, now);
+  await ensureExpiringSoonExceptions(user!.id, now, undefined, stock);
+  await ensureLowStockExceptions(user!.id, now, undefined, stock);
+  if (vendorScope == null) {
+    await flagCasesOpenPastTimeout(user!.id, now);
+  }
 
   const [rows, owners] = await Promise.all([
     listExceptions({
       type: type || undefined,
       sourceContainer: container ? Number(container) : undefined,
       status: status || undefined,
+      vendorId: vendorScope ?? undefined,
     }),
     listAssignableOwners(),
   ]);
-  const lotWatch = stock.filter(
-    (row) => row.flag === "expiring_soon" || row.flag === "expired",
-  );
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Exception queue</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Cases left open past the timeout, expired lots, and unknown barcodes
-          are rows below. Expiring lots are listed with them. Assign an owner
-          and resolve with a note.
+          {vendorScope != null
+            ? "Your queue: expired on shelf, expiring soon, low stock, and rejected or unknown arrivals."
+            : "Expired lots, expiring soon, low stock, unknown scans, and items not on any contract (including the hospital-owned DECA pack)."}
         </p>
       </div>
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="text-lg font-medium">Expiring and expired lots</h2>
-        {lotWatch.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-600">No expiring or expired lots on hand.</p>
-        ) : (
-          <ul className="mt-2 space-y-1 text-sm">
-            {lotWatch.map((row) => (
-              <li key={`${row.productId}-${row.locationId}-${row.lot}-${row.expiry}`}>
-                <span
-                  className={
-                    row.flag === "expired"
-                      ? "font-semibold text-red-800"
-                      : "font-semibold text-amber-800"
-                  }
-                >
-                  {row.flag === "expired"
-                    ? "Expired"
-                    : row.daysUntilExpiry != null && row.daysUntilExpiry <= 30
-                      ? `Expiring within 30 days (${row.daysUntilExpiry}d)`
-                      : "Expiring soon"}
-                </span>
-                {" · "}
-                {row.description} · {row.catalogNumber} · lot {row.lot} · exp {row.expiry} ·
-                on hand {row.onHand}
-                {row.flag === "expired" ? " · rep pays" : ""}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
       <ExceptionQueue
         rows={rows}
         owners={owners}
         filters={{ type, container, status }}
+        readOnly={vendorScope != null}
       />
     </div>
   );

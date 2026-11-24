@@ -3,6 +3,7 @@ import { getDb, type AppDb } from "@/db";
 import { stockEvents } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { getCase, listCasePullLines } from "@/lib/cases";
+import { nowEventAt } from "@/lib/event-time";
 
 export const closeoutActionSchema = z.object({
   caseId: z.coerce.number().int().positive(),
@@ -65,6 +66,7 @@ export async function closeoutReturned(
       lot: data.lot,
       expiry: data.expiry,
       qty: data.qty,
+      at: nowEventAt(),
       byUserId: userId,
     })
     .returning();

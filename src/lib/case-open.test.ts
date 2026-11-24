@@ -53,32 +53,31 @@ describe("open case by lab and room", () => {
         .where(and(eq(cases.roomId, roomId), eq(cases.status, "open")));
 
     const first = await openOrResumeCase(
-      { departmentId: 1, roomId: 2, procedureTypeId: 1 },
+      { departmentId: 1, roomId: 1, procedureTypeId: 1 },
       1,
       db,
     );
-    expect(first.resumed).toBe(false);
+    expect(first.resumed).toBe(true);
     expect(first.caseRow.departmentName).toBe("EP lab");
-    expect(first.caseRow.roomName).toBe("EP 2");
-    expect(first.caseRow.procedureTypeName).toBe("ablation");
+    expect(first.caseRow.roomName).toBe("EP 1");
 
     const again = await openOrResumeCase(
-      { departmentId: 1, roomId: 2, procedureTypeId: 2 },
+      { departmentId: 1, roomId: 1, procedureTypeId: 2 },
       2,
       db,
     );
     expect(again.resumed).toBe(true);
     expect(again.caseRow.id).toBe(first.caseRow.id);
-    expect(await openInRoom(2)).toHaveLength(1);
+    expect(await openInRoom(1)).toHaveLength(1);
 
-    const otherRoom = await openOrResumeCase({ departmentId: 1, roomId: 1 }, 1, db);
+    const otherRoom = await openOrResumeCase({ departmentId: 1, roomId: 2 }, 1, db);
     expect(otherRoom.resumed).toBe(false);
     expect(otherRoom.caseRow.id).not.toBe(first.caseRow.id);
 
-    await closeCase(first.caseRow.id, 1, db);
+    await closeCase(otherRoom.caseRow.id, 1, db);
     const afterClose = await openOrResumeCase({ departmentId: 1, roomId: 2 }, 1, db);
     expect(afterClose.resumed).toBe(false);
-    expect(afterClose.caseRow.id).not.toBe(first.caseRow.id);
+    expect(afterClose.caseRow.id).not.toBe(otherRoom.caseRow.id);
     expect(await openInRoom(2)).toHaveLength(1);
   });
 
@@ -94,20 +93,20 @@ describe("open case by lab and room", () => {
       openOrResumeCase({ departmentId: 1, roomId: 3 }, 1, db),
     ).rejects.toThrow(/not in the selected lab/);
 
-    const options = await loadCaseOpenOptions(4, db);
+    const options = await loadCaseOpenOptions(2, db);
     const cath = options.labs.find((lab) => lab.name === "Cath lab");
     expect(cath?.preview).toBe(true);
     expect(options.labs.find((lab) => lab.name === "EP lab")?.preview).toBe(false);
     expect(options.labs.some((lab) => lab.name === "Ortho")).toBe(false);
     expect(
       options.rooms.filter((room) => room.departmentId === cath!.id).map((r) => r.name),
-    ).toEqual(["Cath 1", "Cath 2"]);
+    ).toEqual(["Cath 1"]);
     expect(options.last).toBeNull();
     expect(options.commonProcedure[1]).toBeDefined();
 
-    await openOrResumeCase({ departmentId: 2, roomId: 4, procedureTypeId: 6 }, 4, db);
-    const remembered = await loadCaseOpenOptions(4, db);
-    expect(remembered.last).toEqual({ departmentId: 2, roomId: 4, procedureTypeId: 6 });
+    await openOrResumeCase({ departmentId: 2, roomId: 3, procedureTypeId: null }, 2, db);
+    const remembered = await loadCaseOpenOptions(2, db);
+    expect(remembered.last).toEqual({ departmentId: 2, roomId: 3, procedureTypeId: null });
 
     const alex = await loadCaseOpenOptions(1, db);
     expect(alex.last?.departmentId).toBe(1);

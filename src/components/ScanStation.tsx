@@ -9,7 +9,19 @@ import {
 } from "@/app/station/actions";
 import { StationOpenCase } from "@/components/StationOpenCase";
 import type { CaseOpenOptions } from "@/lib/case-open";
+import { LastReadPanel, type LastRead } from "@/components/LastReadPanel";
+import { playScanCue } from "@/components/scan-cue";
+import { ScanModeCards, type ScanSource } from "@/components/ScanModeCards";
+import { useWedgeCapture } from "@/components/useWedgeCapture";
 import type { DemoLabel } from "@/lib/demo-labels";
+import { looksLikeTag, normalizeTag } from "@/lib/tag";
+import {
+  LAST_READ_MS,
+  checkedOutBanner,
+  itemReadBanner,
+  logWedgeScan,
+  returnedBanner,
+} from "@/lib/wedge-buffer";
 import type { CaseReconciliation } from "@/lib/reconcile";
 import type { StockViewRow } from "@/lib/stock-view";
 import type {
@@ -39,36 +51,17 @@ type Line = {
 
 type Vendor = { id: number; name: string };
 
-const MODES: { id: StationMode; label: string }[] = [
-  { id: "arrive", label: "Arrive" },
-  { id: "pull", label: "Pull" },
-  { id: "return", label: "Return" },
-];
+const MODE_LABEL: Record<StationMode, string> = {
+  arrive: "Check in",
+  use: "Check out",
+  return: "Return",
+};
 
 const MODE_KEY = "ku-station-mode";
 
-function playTone(ok: boolean) {
-  try {
-    const ctx = new window.AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = ok ? "sine" : "square";
-    osc.frequency.value = ok ? 880 : 180;
-    gain.gain.setValueAtTime(0.07, ctx.currentTime);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    const stopAt = ctx.currentTime + (ok ? 0.12 : 0.28);
-    osc.stop(stopAt);
-    osc.onended = () => void ctx.close();
-  } catch {
-    // Audio can be blocked until a click. Scanning is that click.
-  }
-}
-
 function cue(outcome: StationOutcome) {
-  if (outcome.status === "success") playTone(true);
-  else if (outcome.status === "error" || outcome.status === "unknown") playTone(false);
+  if (outcome.status === "success" || outcome.status === "needs_lot") playScanCue(true);
+  else if (outcome.status === "error" || outcome.status === "unknown") playScanCue(false);
 }
 
 export function ScanStation({
@@ -79,6 +72,11 @@ export function ScanStation({
   vendors,
   simulate,
   caseOptions,
+  allowedModes,
+  showCasePanel = true,
+  allowAddProduct = true,
+  softTrigger = false,
+  scanDebug = false,
 }: {
   caseRow: CaseRow | null;
   reconciliation: CaseReconciliation | null;
@@ -87,11 +85,17 @@ export function ScanStation({
   vendors: Vendor[];
   simulate: DemoLabel[];
   caseOptions: CaseOpenOptions;
+  allowedModes: StationMode[];
+  showCasePanel?: boolean;
+  allowAddProduct?: boolean;
+  softTrigger?: boolean;
+  scanDebug?: boolean;
 }) {
   const router = useRouter();
   const scanRef = useRef<HTMLInputElement>(null);
   const busy = useRef(false);
-  const [mode, setMode] = useState<StationMode>("arrive");
+  const lastTag = useRef<{ tag: string; at: number } | null>(null);
+  const [mode, setMode] = useState<StationMode>(allowedModes[0] ?? "use");
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<StationOutcome | null>(null);
   const [closeNote, setCloseNote] = useState<{
@@ -99,6 +103,10 @@ export function ScanStation({
     message: string;
   } | null>(null);
   const [sim, setSim] = useState("");
+  const [source, setSource] = useState<ScanSource>("rfid");
+  const [typeManually, setTypeManually] = useState(false);
+  const [lastRead, setLastRead] = useState<LastRead | null>(null);
+  const [banner, setBanner] = useState<{ ok: boolean; title: string } | null>(null);
   const [arrivals, setArrivals] = useState<
     {
       id: number;
@@ -129,41 +137,55 @@ export function ScanStation({
   }
 
   useEffect(() => {
-    const saved = sessionStorage.getItem(MODE_KEY);
-    if (saved === "arrive" || saved === "pull" || saved === "return") {
-      setMode(saved);
+    if (allowedModes.includes("use")) {
+      setMode("use");
+      return;
     }
-  }, []);
+    const saved = sessionStorage.getItem(MODE_KEY);
+    const mapped = saved === "pull" ? "use" : saved;
+    setMode((current) => {
+      if (mapped && allowedModes.includes(mapped as StationMode)) {
+        return mapped as StationMode;
+      }
+      if (!allowedModes.includes(current)) {
+        return allowedModes[0] ?? "use";
+      }
+      return current;
+    });
+  }, [allowedModes]);
 
   useEffect(() => {
     sessionStorage.setItem(MODE_KEY, mode);
   }, [mode]);
 
-  function focusScan() {
-    const active = document.activeElement;
-    if (active?.closest("[data-keep-focus]")) return;
-    scanRef.current?.focus();
+  useEffect(() => {
+    if (!lastRead) return;
+    const timer = window.setTimeout(() => setLastRead(null), LAST_READ_MS);
+    return () => window.clearTimeout(timer);
+  }, [lastRead]);
+
+  function recordRead(kind: LastRead["kind"], raw: string, detail: string, title: string, ok: boolean) {
+    setLastRead({ raw, at: Date.now(), kind, detail });
+    setBanner({ ok, title });
   }
-
-  useEffect(() => {
-    function onClick(event: MouseEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-keep-focus]")) return;
-      scanRef.current?.focus();
-    }
-    document.addEventListener("click", onClick);
-    focusScan();
-    return () => document.removeEventListener("click", onClick);
-  }, []);
-
-  useEffect(() => {
-    if (result?.status === "unknown") return;
-    focusScan();
-  }, [result, pending]);
 
   async function submit(raw: string, extra?: { lot?: string; expiry?: string }) {
     const value = raw.replace(/\u0000/g, "").trim();
     if (!value || busy.current) return;
+    logWedgeScan(value);
+    if (looksLikeTag(value)) {
+      const tag = normalizeTag(value);
+      const now = Date.now();
+      if (
+        tag &&
+        lastTag.current &&
+        lastTag.current.tag === tag &&
+        now - lastTag.current.at < 2000
+      ) {
+        return;
+      }
+      if (tag) lastTag.current = { tag, at: now };
+    }
     busy.current = true;
     setPending(true);
     setCloseNote(null);
@@ -182,6 +204,42 @@ export function ScanStation({
       setResult(outcome);
       rememberArrival(outcome);
       cue(outcome);
+      if (outcome.status === "needs_lot") {
+        setSource("barcode");
+        recordRead(
+          "item_recognised",
+          value,
+          outcome.product.description,
+          itemReadBanner(outcome.product.description),
+          true,
+        );
+      }
+      if (outcome.status === "success") {
+        setSource("rfid");
+        if (outcome.mode === "return") {
+          recordRead(
+            "returned",
+            value,
+            outcome.item.description,
+            returnedBanner(outcome.item.description),
+            true,
+          );
+        } else {
+          recordRead(
+            "checked_out",
+            value,
+            outcome.item.description,
+            checkedOutBanner(outcome.item.description),
+            true,
+          );
+        }
+      }
+      if (outcome.status === "unknown") {
+        recordRead("unknown", value, outcome.message, outcome.message, false);
+      }
+      if (outcome.status === "error") {
+        recordRead("rejected", value, outcome.message, outcome.message, false);
+      }
       if (scanRef.current) scanRef.current.value = "";
       setSim("");
       router.refresh();
@@ -190,6 +248,13 @@ export function ScanStation({
       setPending(false);
     }
   }
+
+  const buffer = useWedgeCapture({
+    active: !typeManually,
+    paused: pending,
+    scanRef,
+    onScan: (value) => void submit(value),
+  });
 
   function goToCase(caseId: number) {
     setResult(null);
@@ -224,21 +289,21 @@ export function ScanStation({
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[1.45fr_1fr]">
       <section className="space-y-4">
-        <div className="grid grid-cols-3 gap-2">
-          {MODES.map((entry) => {
-            const active = mode === entry.id;
+        <div className={`grid gap-2 ${allowedModes.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+          {allowedModes.map((id) => {
+            const active = mode === id;
             return (
               <button
-                key={entry.id}
+                key={id}
                 type="button"
-                onClick={() => setMode(entry.id)}
+                onClick={() => setMode(id)}
                 className={`rounded-xl px-3 py-4 text-lg font-bold uppercase tracking-wide ${
                   active
                     ? "bg-pc-teal text-white"
                     : "border border-slate-300 bg-white text-slate-800"
                 }`}
               >
-                {entry.label}
+                {MODE_LABEL[id]}
               </button>
             );
           })}
@@ -248,7 +313,9 @@ export function ScanStation({
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Current mode
           </p>
-          <p className="text-2xl font-bold uppercase">{mode}</p>
+          <p className="text-2xl font-bold uppercase">{MODE_LABEL[mode]}</p>
+          {showCasePanel ? (
+            <>
           <div className="mt-2 border-t border-slate-200 pt-2">
             <p className="text-xl font-bold text-slate-900">
               {caseTitle}
@@ -291,36 +358,62 @@ export function ScanStation({
               />
             </div>
           )}
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-slate-600">
+              Scan your own products onto KU's shelf. Item barcode, then lot and expiry.
+            </p>
+          )}
         </div>
 
         <div className="space-y-4 rounded-xl border bg-white p-4">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit(scanRef.current?.value ?? "");
-          }}
-        >
-          <label className="block text-sm font-semibold text-slate-700" htmlFor="station-scan">
-            Scan
-          </label>
-          <input
-            id="station-scan"
-            ref={scanRef}
-            autoFocus
-            autoComplete="off"
-            placeholder="Scan or type a barcode, then Enter"
-            className="mt-1 w-full rounded-xl border-2 border-pc-teal bg-white px-4 py-4 text-2xl text-[#16323c] outline-none ring-pc-blue focus:ring-4"
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void submit(scanRef.current?.value ?? "");
-              }
+        <LastReadPanel
+          lastRead={lastRead}
+          reading={buffer}
+          debugBuffer={scanDebug ? buffer : null}
+        />
+        {banner ? (
+          <div
+            className={`rounded-2xl px-4 py-4 text-white ${
+              banner.ok ? "bg-emerald-700" : "bg-red-700"
+            }`}
+            aria-live="polite"
+          >
+            <p className="text-3xl font-bold">{banner.title}</p>
+          </div>
+        ) : null}
+        {showCasePanel ? (
+          <ScanModeCards
+            first="rfid"
+            selected={source}
+            completed={{
+              barcode: Boolean(result?.status === "success" && !result.tagDisplay),
             }}
+            onSelect={setSource}
+            scanRef={scanRef}
+            onSubmit={() => void submit(scanRef.current?.value ?? "")}
+            disabled={pending}
+            softTrigger={softTrigger}
+            hideSecond
+            onTypeManuallyChange={setTypeManually}
           />
-          <p className="mt-1 text-xs text-slate-500">
-            Keyboard wedge scanners: characters land here and Enter submits. Whitespace is trimmed.
-          </p>
-        </form>
+        ) : (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit(scanRef.current?.value ?? "");
+            }}
+          >
+            <input
+              id="station-scan"
+              ref={scanRef}
+              autoComplete="off"
+              inputMode="none"
+              enterKeyHint="done"
+              className="sr-only"
+            />
+          </form>
+        )}
 
         <form
           className="flex flex-wrap items-end gap-2"
@@ -335,7 +428,7 @@ export function ScanStation({
               data-keep-focus
               value={sim}
               onChange={(event) => setSim(event.target.value)}
-              placeholder="Type a barcode string"
+              placeholder="Type a barcode or tag ID"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -352,7 +445,10 @@ export function ScanStation({
               key={label.id}
               type="button"
               className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-800"
-              onClick={() => void submit(label.barcode)}
+              onClick={() => {
+                setSource("barcode");
+                void submit(label.barcode);
+              }}
             >
               {label.title}
             </button>
@@ -446,7 +542,7 @@ export function ScanStation({
           </form>
         ) : null}
 
-        {result?.status === "unknown" ? (
+        {result?.status === "unknown" && allowAddProduct ? (
           <form
             data-keep-focus
             className="space-y-3 rounded-xl border border-red-300 bg-white p-4"
@@ -571,30 +667,30 @@ export function ScanStation({
             <>
               <p className="mt-2 text-4xl font-bold tabular-nums">
                 {tally.taken}
-                <span className="ml-2 text-base font-semibold text-slate-500">taken</span>
+                <span className="ml-2 text-base font-semibold text-slate-500">used</span>
               </p>
               <p className="mt-1 text-lg tabular-nums text-slate-800">
                 {tally.returned} returned
               </p>
               {tally.taken === 0 ? (
                 <p className="mt-3 text-sm text-slate-500">
-                  Check starts once items are pulled.
+                  Check starts once items are used.
                 </p>
               ) : caseOpen ? (
                 <p className="mt-3 text-lg font-semibold text-slate-800">
-                  {tally.used} still out · counts as used at close
+                  {tally.used} used · KU pays at scan. Return to net it out.
                 </p>
               ) : (
                 <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
-                  <p className="text-lg font-bold">Used (not returned): {tally.used}</p>
-                  <p className="text-lg font-bold">Returned: {tally.returned}</p>
+                  <p className="text-lg font-bold">Used (KU paid): {tally.used}</p>
+                  <p className="text-lg font-bold">Returned (netted out): {tally.returned}</p>
                 </div>
               )}
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
                 {lines.map((line) => (
                   <li key={`${line.productId}-${line.lot}-${line.expiry}`}>
                     {line.description}{" "}
-                    <span className="font-mono text-xs">{line.lot}</span> · pulled{" "}
+                    <span className="font-mono text-xs">{line.lot}</span> · used{" "}
                     {line.pulled} · returned {line.returned}
                   </li>
                 ))}
@@ -602,7 +698,7 @@ export function ScanStation({
             </>
           ) : (
             <p className="mt-2 text-sm text-slate-600">
-              Open a case to pull or return.
+              Open a case to check out or return.
             </p>
           )}
         </div>
@@ -644,7 +740,7 @@ export function ScanStation({
         </div>
 
         <div className="rounded-xl border border-slate-300 bg-white p-3">
-          <h2 className="text-sm font-bold">Just arrived</h2>
+          <h2 className="text-sm font-bold">Just checked in</h2>
           {arrivals.length === 0 ? (
             <p className="mt-1 text-xs text-slate-500">
               New shelf scans show here.
@@ -674,7 +770,7 @@ function ResultCard({ result }: { result: StationOutcome | null }) {
   if (result.status === "unknown") {
     return (
       <div className="rounded-xl bg-red-700 px-5 py-6 text-white shadow-lg" aria-live="polite">
-        <p className="text-4xl font-bold">Unknown barcode</p>
+        <p className="text-4xl font-bold">{result.message}</p>
         <p className="mt-1 font-mono text-lg">{result.raw}</p>
       </div>
     );
@@ -703,6 +799,7 @@ function ResultCard({ result }: { result: StationOutcome | null }) {
       </p>
       <p className="mt-1 text-lg">
         Lot {result.item.lot} · exp {result.item.expiry} · qty {result.item.qty}
+        {result.tagDisplay ? ` · tag ${result.tagDisplay}` : ""}
       </p>
       {result.notice ? (
         <p className="mt-3 rounded-lg bg-amber-100 px-3 py-2 text-lg font-semibold text-amber-950">

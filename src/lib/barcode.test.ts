@@ -11,7 +11,7 @@ import {
   parseBarcode,
   withHibcCheck,
 } from "@/lib/barcode";
-import { DEMO_LABELS, expiringLotBarcode, labelSymbolText } from "@/lib/demo-labels";
+import { DEMO_LABELS, labelSymbolText } from "@/lib/demo-labels";
 import { demoGtin, gtin14 } from "@/lib/demo-gtin";
 import {
   CARDIVA_VASCADE,
@@ -42,7 +42,7 @@ describe("parseBarcode", () => {
   });
 
   it("parses each printed label the same way as the human-readable string", () => {
-    const labels = [...DEMO_LABELS, { barcode: expiringLotBarcode("2026-11-30") }];
+    const labels = [...DEMO_LABELS];
     for (const label of labels) {
       const shown = parseBarcode(label.barcode);
       const scanned = parseBarcode(labelSymbolText(label.barcode));

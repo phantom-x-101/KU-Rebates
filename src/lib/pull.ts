@@ -6,6 +6,7 @@ import { getCase } from "@/lib/cases";
 import { identifyProduct } from "@/lib/arrival";
 import { isLotExpiryOnly } from "@/lib/barcode";
 import { flagNotOnAnyContract, recordUnmappedBarcode } from "@/lib/exceptions";
+import { nowEventAt } from "@/lib/event-time";
 import { listPullableLots, type PullableLot } from "@/lib/stock";
 
 export const recordPullSchema = z.object({
@@ -51,6 +52,7 @@ export async function recordPull(
       lot: data.lot,
       expiry: data.expiry,
       qty: data.qty,
+      at: nowEventAt(),
       byUserId: userId,
     })
     .returning();

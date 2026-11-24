@@ -40,15 +40,15 @@ describe("demo reset", () => {
     const { resetDemoData } = await import("@/lib/demo-reset");
     const { stockOnHand } = await import("@/lib/stock");
     const started = Date.now();
-    await resetDemoData(4);
+    await resetDemoData(2);
     const ms = Date.now() - started;
     expect(ms).toBeLessThan(3000);
 
     const rows = await stockOnHand({}, created.db);
     const byLot = Object.fromEntries(rows.map((row) => [`${row.productId}|${row.lot}`, row.onHand]));
     expect(byLot["1|0001681425"]).toBe(1);
-    expect(byLot["4|EXPIRED-SHELF"]).toBe(1);
-    expect(byLot["4|EXPIRINGSOON1"]).toBe(1);
-    expect(byLot["25|0001476667"]).toBe(2);
+    expect(byLot["2|DEMO-SOON"]).toBe(1);
+    expect(byLot["3|DEMO-EXPIRED"]).toBe(1);
+    expect(byLot["3|0001476667"]).toBe(2);
   });
 });

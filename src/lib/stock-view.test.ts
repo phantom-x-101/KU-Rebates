@@ -43,7 +43,7 @@ describe("Phase 6 stock, expiry, reorder", () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
-  it("flags seeded EXPIRINGSOON1 as expiring soon", async () => {
+  it("flags seeded DEMO-SOON as expiring soon", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     const { db } = created;
@@ -51,7 +51,7 @@ describe("Phase 6 stock, expiry, reorder", () => {
     (globalThis as any).__kuDb = created;
 
     const rows = await listStockView({}, new Date(), db);
-    const soon = rows.find((r) => r.lot === "EXPIRINGSOON1");
+    const soon = rows.find((r) => r.lot === "DEMO-SOON");
     expect(soon).toBeTruthy();
     expect(soon!.flag).toBe("expiring_soon");
     expect(soon!.onHand).toBe(1);
@@ -121,7 +121,7 @@ describe("Phase 6 stock, expiry, reorder", () => {
     (globalThis as any).__kuDb = created;
 
     const rows = await listReorderView(db);
-    // Terumo sheath par 4; seed on-hand for lot 0001681425 is 1 + EXPIRINGSOON1 is 1 = 2 at loc 1
+    // Terumo 8 Fr par 4; seed on-hand for that product is 1
     const sheath = rows.find((r) => r.catalogNumber === "RSS802");
     expect(sheath).toBeTruthy();
     expect(sheath!.parLevel).toBe(4);

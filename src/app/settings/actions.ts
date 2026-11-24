@@ -8,6 +8,8 @@ import {
   createProduct,
   createStorageLocation,
   createVendor,
+  setScanDebugEnabled,
+  setSoftTriggerEnabled,
   updateProduct,
   upsertProductAccess,
 } from "@/lib/settings";
@@ -198,6 +200,32 @@ export async function createExpiryRuleAction(
     return {
       ok: false,
       message: e instanceof Error ? e.message : "Failed to create expiry rule",
+    };
+  }
+}
+
+export async function setSoftTriggerAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    const user = await requireSettingsUser();
+    const soft = formData.get("softTrigger") === "on";
+    const debug = formData.get("scanDebug") === "on";
+    await setSoftTriggerEnabled(soft, user.id);
+    await setScanDebugEnabled(debug, user.id);
+    revalidatePath("/settings");
+    revalidatePath("/settings/audit");
+    revalidatePath("/vendor/check-in");
+    revalidatePath("/station");
+    return {
+      ok: true,
+      message: `Scanner settings saved. Soft trigger ${soft ? "on" : "off"}, scan debug ${debug ? "on" : "off"}.`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : "Failed to save scanner setting",
     };
   }
 }

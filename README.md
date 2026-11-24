@@ -12,10 +12,10 @@ npm run db:seed    # resets SQLite to a clean demo state
 npm run dev        # http://localhost:3000
 ```
 
-1. Pick **Sam Supply** (`supply_chain`) in the header.
+1. Pick **Sam** (`supply_chain`) in the header.
 2. Open **Dashboard** — taken today, open exceptions, expiring ≤30 days, low stock.
-3. Walk Stock, Cases, Exceptions, Reorder, Settings as needed.
-4. Pick **Terry Terumo Rep** for the vendor portal (`/vendor`).
+3. Walk Inventory, Usage, Returns, Exceptions, Settings as needed.
+4. Pick **Terry Terumo** for the vendor portal (`/vendor`).
 
 ```bash
 npm test           # unit tests (Vitest)
@@ -23,7 +23,7 @@ npm test           # unit tests (Vitest)
 
 Re-seed anytime with `npm run db:seed` (deletes `data/ku.sqlite` and rebuilds).
 
-Footer on every page: *Demo data. Vendor X and Vendor C are placeholders.*
+Footer on every page: *Demo data. Lots DEMO-EXPIRED and DEMO-SOON, par levels, quantities and dates are placeholders.*
 
 ## Phase map
 

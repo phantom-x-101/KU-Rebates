@@ -4,9 +4,11 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { User } from "@/db/schema";
+import { getVendorDashboard } from "@/lib/vendor-dashboard";
 import {
   canAccessVendorPortal,
   listVendorExpiryAlerts,
+  listVendorReturns,
   listVendorStock,
   listVendorUsage,
   requireVendorRepScope,
@@ -17,8 +19,8 @@ const CARDIVA_VENDOR_ID = 2;
 
 const terumoRep: User = {
   id: 5,
-  name: "Terry Terumo Rep",
-  email: "terry.rep@terumo.example",
+  name: "Terry Terumo",
+  email: "terry@terumo.example",
   role: "vendor_rep",
   vendorId: TERUMO_VENDOR_ID,
   active: 1,
@@ -148,6 +150,19 @@ describe("Terumo rep cannot read Cardiva", () => {
     const cardivaUsage = await listVendorUsage(CARDIVA_VENDOR_ID, {}, db);
     expect(cardivaUsage.some((r) => r.catalogNumber === "800-612C")).toBe(true);
     expect(cardivaUsage.some((r) => r.catalogNumber === "RSS802")).toBe(false);
+    const returnedCardivaCase1 = cardivaUsage.find(
+      (r) => r.caseId === 1 && r.catalogNumber === "800-612C",
+    );
+    expect(returnedCardivaCase1).toBeUndefined();
+
+    const cardivaDash = await getVendorDashboard(CARDIVA_VENDOR_ID, new Date(), db);
+    expect(cardivaDash.mostUsed[0]?.catalogNumber).not.toBe(
+      cardivaDash.leastUsed[0]?.catalogNumber,
+    );
+    const nuvisionDash = await getVendorDashboard(3, new Date(), db);
+    expect(nuvisionDash.mostUsed[0]?.catalogNumber).not.toBe(
+      nuvisionDash.leastUsed[0]?.catalogNumber,
+    );
 
     // Case identity fields only expose date / room / procedure
     for (const row of terumoUsage) {
@@ -176,7 +191,7 @@ describe("Terumo rep cannot read Cardiva", () => {
     ).toBe(false);
   });
 
-  it("closed-case pulls that were not returned show as used", async () => {
+  it("closed-case uses that were not returned show as used; returns drop off usage", async () => {
     const db = await freshDb();
     const { openCase, closeCase } = await import("@/lib/cases");
     const { recordPull } = await import("@/lib/pull");
@@ -251,6 +266,18 @@ describe("Terumo rep cannot read Cardiva", () => {
       ),
     ).toBe(true);
     expect(usage.some((row) => row.caseId === returnedCase.id)).toBe(false);
+    const returns = await listVendorReturns(TERUMO_VENDOR_ID, db);
+    expect(returns.some((row) => row.caseId === returnedCase.id)).toBe(true);
+    expect(returns.every((row) => row.catalogNumber !== "800-612C")).toBe(true);
+  });
+
+  it("listVendorReturns(Terumo) never includes Cardiva returns", async () => {
+    const db = await freshDb();
+    const terumo = await listVendorReturns(TERUMO_VENDOR_ID, db);
+    const cardiva = await listVendorReturns(CARDIVA_VENDOR_ID, db);
+    expect(terumo.every((row) => row.catalogNumber !== "800-612C")).toBe(true);
+    expect(cardiva.some((row) => row.catalogNumber === "800-612C")).toBe(true);
+    expect(cardiva.every((row) => row.catalogNumber !== "RSS802")).toBe(true);
   });
 
   it("requireVendorRepScope always binds Terumo rep to vendor 1 (not Cardiva)", () => {

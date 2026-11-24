@@ -11,8 +11,8 @@ export default async function DashboardPage() {
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Supply chain dashboard</h1>
         <p className="text-sm text-amber-800">
-          Dashboard is for <strong>supply_chain</strong> and{" "}
-          <strong>admin</strong>. Pick Sam or Ada in the header.
+          Dashboard is for <strong>supply_chain</strong>. Pick Sam in the
+          header.
         </p>
         <Link href="/" className="text-sm underline">
           Back to home
@@ -39,7 +39,7 @@ export default async function DashboardPage() {
         <Stat
           label="Taken today"
           value={String(dash.takenTodayQty)}
-          hint={`${dash.takenToday.length} pull event(s)`}
+          hint={`${dash.takenToday.length} use event(s)`}
         />
         <Stat
           label="Open exceptions"
@@ -61,7 +61,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <Section title="Items taken today" empty="No pulls recorded today.">
+      <Section title="Items taken today" empty="No uses recorded today.">
         {dash.takenToday.length > 0 ? (
           <table className="min-w-full border-collapse text-left text-sm">
             <thead>

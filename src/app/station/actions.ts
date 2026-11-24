@@ -2,12 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { openOrResumeCase } from "@/lib/case-open";
-import { CASE_ROLES } from "@/lib/cases";
 import { getCurrentUser } from "@/lib/session";
 import {
   addStationProduct,
   applyStationScan,
   closeStationCase,
+  stationModesForRole,
   type StationMode,
   type StationOutcome,
 } from "@/lib/station";
@@ -19,17 +19,25 @@ function revalidateDemo() {
   revalidatePath("/exceptions");
   revalidatePath("/reorder");
   revalidatePath("/vendor");
+  revalidatePath("/vendor/stock");
+  revalidatePath("/vendor/returns");
+  revalidatePath("/usage");
+  revalidatePath("/returns");
   revalidatePath("/");
 }
 
 async function requireStationUser() {
   const user = await getCurrentUser();
-  if (
-    !user ||
-    !user.active ||
-    !CASE_ROLES.includes(user.role as (typeof CASE_ROLES)[number])
-  ) {
-    throw new Error("Scan station requires tech, supply_chain, or admin");
+  if (!user || !user.active || stationModesForRole(user.role).length === 0) {
+    throw new Error("Check out requires a tech (check out / return)");
+  }
+  return user;
+}
+
+async function requireTech() {
+  const user = await getCurrentUser();
+  if (!user || !user.active || user.role !== "tech") {
+    throw new Error("Opening and closing cases is limited to the tech");
   }
   return user;
 }
@@ -69,7 +77,7 @@ export async function openStationCaseAction(input: {
   procedureTypeId: number | null;
 }): Promise<OpenCaseResult> {
   try {
-    const user = await requireStationUser();
+    const user = await requireTech();
     const { resumed, caseRow } = await openOrResumeCase(input, user.id);
     if (resumed) {
       return {
@@ -95,7 +103,7 @@ export async function closeEpCaseAction(caseId: number): Promise<{
   reconciliation: CaseReconciliation | null;
 }> {
   try {
-    const user = await requireStationUser();
+    const user = await requireTech();
     const reconciliation = await closeStationCase(caseId, user.id);
     revalidateDemo();
     revalidatePath("/cases");
@@ -125,7 +133,10 @@ export async function addProductAction(input: {
   expiry?: string;
 }): Promise<StationOutcome> {
   try {
-    const user = await requireStationUser();
+    const user = await getCurrentUser();
+    if (!user || user.role !== "admin") {
+      throw new Error("Adding a product from the station is disabled in this demo");
+    }
     const result = await addStationProduct(
       {
         ...input,

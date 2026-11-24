@@ -11,11 +11,22 @@ import {
 } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { CASE_TIMEOUT_ACTION, caseIdFromDetail } from "@/lib/reconcile";
+import { formatTag } from "@/lib/tag";
 
 export const EXCEPTION_QUEUE_ROLES = [
   "supply_chain",
   "admin",
   "category_owner",
+  "vendor_rep",
+] as const;
+
+export const VENDOR_EXCEPTION_TYPES = [
+  "expired_on_shelf",
+  "expiring_soon",
+  "low_stock",
+  "bill_only_unmapped",
+  "rejected_arrival",
+  "expired_unit",
 ] as const;
 
 export function canAccessExceptionQueue(
@@ -32,7 +43,7 @@ export function assertCanAccessExceptionQueue(
 ) {
   if (!canAccessExceptionQueue(user)) {
     throw new Error(
-      "Exception queue requires supply_chain, category_owner, or admin",
+      "Exception queue requires supply_chain, category_owner, admin, or vendor_rep",
     );
   }
   return user!;
@@ -41,14 +52,22 @@ export function assertCanAccessExceptionQueue(
 export const exceptionTypeSchema = z.enum([
   "case_open_past_timeout",
   "expired_on_shelf",
+  "expiring_soon",
+  "low_stock",
   "bill_only_unmapped",
+  "rejected_arrival",
   "not_on_any_contract",
   "missing_from_item_master",
+  "unknown_tag",
+  "expired_unit",
 ]);
 
 export const UNMAPPED_ACTION = "create_unmapped";
+export const REJECTED_ARRIVAL_ACTION = "create_rejected_arrival";
+export const UNKNOWN_TAG_ACTION = "create_unknown_tag";
+export const EXPIRED_UNIT_ACTION = "create_expired_unit";
 
-export type UnmappedSource = "station" | "arrival" | "pull";
+export type UnmappedSource = "station" | "arrival" | "pull" | "use";
 
 function barcodeFromDetail(detail: string | null): string | null {
   if (!detail) return null;
@@ -83,6 +102,7 @@ export async function recordUnmappedBarcode(
   source: UnmappedSource,
   userId: number | null,
   db: AppDb = getDb(),
+  vendorId?: number | null,
 ) {
   const raw = rawBarcode.trim();
   if (!raw) return null;
@@ -99,6 +119,8 @@ export async function recordUnmappedBarcode(
       ownerUserId: null,
     })
     .returning();
+  const vendorBit =
+    vendorId != null ? ` vendor=${vendorId}` : "";
   await audit(
     {
       userId,
@@ -106,11 +128,150 @@ export async function recordUnmappedBarcode(
       entity: "exceptions",
       entityId: row.id,
       action: UNMAPPED_ACTION,
-      detail: `via=${source} barcode=${raw}`,
+      detail: `via=${source}${vendorBit} barcode=${raw}`,
     },
     db,
   );
   return { id: row.id, created: true };
+}
+
+function tagFromDetail(detail: string | null): string | null {
+  if (!detail) return null;
+  const at = detail.indexOf("tag=");
+  if (at < 0) return null;
+  const rest = detail.slice(at + "tag=".length);
+  return rest.split(/\s+/)[0] ?? null;
+}
+
+export async function recordUnknownTag(
+  tagEpc: string,
+  userId: number | null,
+  db: AppDb = getDb(),
+) {
+  const tag = tagEpc.trim().toUpperCase();
+  if (!tag) return null;
+  const open = await db
+    .select({ id: exceptions.id, detail: auditLog.detail })
+    .from(exceptions)
+    .innerJoin(
+      auditLog,
+      and(
+        eq(auditLog.entity, "exceptions"),
+        eq(auditLog.entityId, exceptions.id),
+        eq(auditLog.action, UNKNOWN_TAG_ACTION),
+      ),
+    )
+    .where(and(eq(exceptions.type, "unknown_tag"), ne(exceptions.status, "resolved")));
+  const existing = open.find((row) => tagFromDetail(row.detail) === tag);
+  if (existing) return { id: existing.id, created: false };
+
+  const [row] = await db
+    .insert(exceptions)
+    .values({
+      sourceContainer: 1,
+      type: "unknown_tag",
+      productId: null,
+      status: "open",
+      ownerUserId: null,
+    })
+    .returning();
+  await audit(
+    {
+      userId,
+      container: 1,
+      entity: "exceptions",
+      entityId: row.id,
+      action: UNKNOWN_TAG_ACTION,
+      detail: `tag=${tag}`,
+    },
+    db,
+  );
+  return { id: row.id, created: true };
+}
+
+export async function recordExpiredUnit(
+  input: { productId: number; tagEpc: string; expiry: string },
+  userId: number | null,
+  db: AppDb = getDb(),
+) {
+  const [existing] = await db
+    .select({ id: exceptions.id })
+    .from(exceptions)
+    .where(
+      and(
+        eq(exceptions.type, "expired_unit"),
+        eq(exceptions.productId, input.productId),
+        ne(exceptions.status, "resolved"),
+      ),
+    )
+    .limit(1);
+  if (existing) return { id: existing.id, created: false };
+
+  const [row] = await db
+    .insert(exceptions)
+    .values({
+      sourceContainer: 1,
+      type: "expired_unit",
+      productId: input.productId,
+      status: "open",
+      ownerUserId: null,
+    })
+    .returning();
+  await audit(
+    {
+      userId,
+      container: 1,
+      entity: "exceptions",
+      entityId: row.id,
+      action: EXPIRED_UNIT_ACTION,
+      detail: `tag=${input.tagEpc} expiry=${input.expiry}`,
+    },
+    db,
+  );
+  return { id: row.id, created: true };
+}
+
+function vendorIdFromDetail(detail: string | null): number | null {
+  if (!detail) return null;
+  const match = detail.match(/\bvendor=(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+/** Wrong-vendor or hospital-owned arrive: exception only, no stock event. */
+export async function recordRejectedArrival(
+  input: {
+    rawBarcode: string;
+    actorVendorId: number;
+    productId: number | null;
+    reason: "wrong_vendor" | "hospital_owned";
+    productVendorName?: string | null;
+  },
+  userId: number | null,
+  db: AppDb = getDb(),
+) {
+  const raw = input.rawBarcode.trim();
+  const [row] = await db
+    .insert(exceptions)
+    .values({
+      sourceContainer: 1,
+      type: "rejected_arrival",
+      productId: null,
+      status: "open",
+      ownerUserId: null,
+    })
+    .returning();
+  await audit(
+    {
+      userId,
+      container: 1,
+      entity: "exceptions",
+      entityId: row.id,
+      action: REJECTED_ARRIVAL_ACTION,
+      detail: `via=arrival vendor=${input.actorVendorId} reason=${input.reason} barcode=${raw}`,
+    },
+    db,
+  );
+  return row;
 }
 
 export const NOT_ON_CONTRACT_ACTION = "create_not_on_any_contract";
@@ -127,7 +288,7 @@ export async function productOnAnyContract(productId: number, db: AppDb = getDb(
 /** One open `not_on_any_contract` exception per product scanned with no contract line. */
 export async function flagNotOnAnyContract(
   productId: number,
-  via: "arrival" | "pull",
+  via: "arrival" | "pull" | "use",
   userId: number | null,
   db: AppDb = getDb(),
 ) {
@@ -195,6 +356,7 @@ export async function listExceptions(
     type?: string;
     sourceContainer?: number;
     status?: string;
+    vendorId?: number;
   } = {},
   db: AppDb = getDb(),
 ) {
@@ -221,6 +383,7 @@ export async function listExceptions(
       catalogNumber: products.catalogNumber,
       productDescription: products.description,
       vendorName: vendors.name,
+      productVendorId: products.vendorId,
     })
     .from(exceptions)
     .leftJoin(products, eq(exceptions.productId, products.id))
@@ -230,7 +393,14 @@ export async function listExceptions(
     .orderBy(desc(exceptions.id));
 
   const ids = rows
-    .filter((r) => r.type === "case_open_past_timeout" || r.type === "bill_only_unmapped")
+    .filter(
+      (r) =>
+        r.type === "case_open_past_timeout" ||
+        r.type === "bill_only_unmapped" ||
+        r.type === "rejected_arrival" ||
+        r.type === "unknown_tag" ||
+        r.type === "expired_unit",
+    )
     .map((r) => r.id);
   const details = ids.length
     ? await db
@@ -240,19 +410,50 @@ export async function listExceptions(
           and(
             eq(auditLog.entity, "exceptions"),
             inArray(auditLog.entityId, ids),
-            inArray(auditLog.action, [CASE_TIMEOUT_ACTION, UNMAPPED_ACTION]),
+            inArray(auditLog.action, [
+              CASE_TIMEOUT_ACTION,
+              UNMAPPED_ACTION,
+              REJECTED_ARRIVAL_ACTION,
+              UNKNOWN_TAG_ACTION,
+              EXPIRED_UNIT_ACTION,
+            ]),
           ),
         )
     : [];
   const detailById = new Map(details.map((d) => [d.entityId, d.detail]));
 
-  return rows.map((r) => {
+  const mapped = rows.map((r) => {
     const detail = detailById.get(r.id) ?? null;
+    const { productVendorId, ...rest } = r;
     return {
-      ...r,
+      ...rest,
+      productVendorId,
+      actorVendorId: vendorIdFromDetail(detail),
       caseId: r.type === "case_open_past_timeout" ? caseIdFromDetail(detail) : null,
-      barcode: r.type === "bill_only_unmapped" ? barcodeFromDetail(detail) : null,
+      barcode:
+        r.type === "bill_only_unmapped" || r.type === "rejected_arrival"
+          ? barcodeFromDetail(detail)
+          : r.type === "unknown_tag" || r.type === "expired_unit"
+            ? formatTag(tagFromDetail(detail) ?? "")
+            : null,
     };
+  });
+
+  if (filters.vendorId == null) return mapped;
+
+  const vendorId = filters.vendorId;
+  return mapped.filter((row) => {
+    if (
+      !VENDOR_EXCEPTION_TYPES.includes(
+        row.type as (typeof VENDOR_EXCEPTION_TYPES)[number],
+      )
+    ) {
+      return false;
+    }
+    if (row.type === "bill_only_unmapped" || row.type === "rejected_arrival") {
+      return row.actorVendorId === vendorId;
+    }
+    return row.productVendorId === vendorId;
   });
 }
 

@@ -34,17 +34,17 @@ describe("check: taken = returned + used", () => {
 });
 
 describe("exception queue permissions", () => {
-  it("allows supply_chain, admin, category_owner; denies vendor_rep and tech", () => {
+  it("allows supply_chain, admin, category_owner and vendor_rep; denies tech", () => {
     expect(canAccessExceptionQueue({ role: "supply_chain", active: 1 })).toBe(true);
     expect(canAccessExceptionQueue({ role: "admin", active: 1 })).toBe(true);
     expect(canAccessExceptionQueue({ role: "category_owner", active: 1 })).toBe(true);
-    expect(canAccessExceptionQueue({ role: "vendor_rep", active: 1 })).toBe(false);
+    expect(canAccessExceptionQueue({ role: "vendor_rep", active: 1 })).toBe(true);
     expect(canAccessExceptionQueue({ role: "tech", active: 1 })).toBe(false);
     expect(canAccessExceptionQueue(null)).toBe(false);
     expect(canAccessExceptionQueue({ role: "admin", active: 0 })).toBe(false);
     expect(() =>
-      assertCanAccessExceptionQueue({ role: "vendor_rep", active: 1 }),
-    ).toThrow(/supply_chain, category_owner, or admin/);
+      assertCanAccessExceptionQueue({ role: "tech", active: 1 }),
+    ).toThrow(/supply_chain, category_owner, admin, or vendor_rep/);
   });
 });
 
@@ -95,10 +95,10 @@ describe("reconcile and timeout exceptions", () => {
     return c;
   }
 
-  it("seeded EP case: 6 taken, 1 returned, 5 used; no gap exceptions", async () => {
+  it("seeded first EP case: 2 taken, 1 returned, 1 used; no gap exceptions", async () => {
     const db = await freshDb();
     const recon = await reconcileCase(1, db);
-    expect(recon).toMatchObject({ taken: 6, returned: 1, used: 5 });
+    expect(recon).toMatchObject({ taken: 2, returned: 1, used: 1 });
 
     const all = await db.select({ type: exceptions.type }).from(exceptions);
     expect(
