@@ -202,8 +202,8 @@ function lineKey(k: CaseLineKey) {
 }
 
 /**
- * Pulled lines for a case. `remaining` is still out of the shelf; at close it
- * counts as used.
+ * Use/return lines for a case. `remaining` is used and not yet returned.
+ * KU pays at the use scan; a return nets that qty out of usage.
  */
 export async function listCasePullLines(caseId: number, db: AppDb = getDb()) {
   const events = await db

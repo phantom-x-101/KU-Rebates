@@ -9,7 +9,7 @@ import {
 } from "@/lib/dashboard";
 
 describe("supply chain dashboard access", () => {
-  it("allows supply_chain and admin only", () => {
+  it("allows supply_chain, admin, and category owner", () => {
     expect(
       canAccessDashboard({
         id: 2,
@@ -26,6 +26,16 @@ describe("supply chain dashboard access", () => {
         name: "Ada",
         email: null,
         role: "admin",
+        vendorId: null,
+        active: 1,
+      }),
+    ).toBe(true);
+    expect(
+      canAccessDashboard({
+        id: 3,
+        name: "Casey",
+        email: null,
+        role: "category_owner",
         vendorId: null,
         active: 1,
       }),
@@ -83,7 +93,7 @@ describe("getSupplyChainDashboard against seed", () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
-  it("leaves today empty, with open exceptions, expiring ≤30d, and low stock", async () => {
+  it("counts today's use events, with open exceptions, expiring ≤30d, and low stock", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -91,8 +101,8 @@ describe("getSupplyChainDashboard against seed", () => {
 
     const dash = await getSupplyChainDashboard(new Date(), created.db);
 
-    expect(dash.takenTodayQty).toBe(0);
-    expect(dash.takenToday).toHaveLength(0);
+    expect(dash.takenTodayQty).toBe(4);
+    expect(dash.takenToday.length).toBeGreaterThan(0);
     expect(dash.openExceptions.length).toBeGreaterThan(0);
     expect(
       dash.openExceptions.some(
@@ -101,11 +111,50 @@ describe("getSupplyChainDashboard against seed", () => {
     ).toBe(true);
     expect(dash.expiringIn30Days.length).toBeGreaterThan(0);
     expect(
-      dash.expiringIn30Days.some((r) => r.lot === "EXPIRINGSOON1"),
+      dash.expiringIn30Days.some((r) => r.lot === "DEMO-SOON"),
     ).toBe(true);
     expect(dash.lowStock.length).toBeGreaterThan(0);
     expect(dash.lowStock.every((r) => r.onHand < (r.parLevel ?? Infinity))).toBe(
       true,
     );
+  });
+
+  it("counts SQLite datetime uses today and nets a same-day return", async () => {
+    const { createDb } = await import("@/db");
+    const { stockEvents } = await import("@/db/schema");
+    const created = createDb(dbPath);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__kuDb = created;
+    const dayIso = new Date().toISOString().slice(0, 10);
+
+    await created.db.insert(stockEvents).values({
+      eventType: "pulled",
+      productId: 1,
+      locationId: 1,
+      caseId: 7,
+      lot: "0001681425",
+      expiry: "2028-11-01",
+      qty: 1,
+      byUserId: 1,
+      at: `${dayIso} 15:04:00`,
+    });
+    let dash = await getSupplyChainDashboard(new Date(), created.db);
+    expect(dash.takenTodayQty).toBe(5);
+    expect(dash.takenToday.some((r) => r.catalogNumber === "RSS802")).toBe(true);
+
+    await created.db.insert(stockEvents).values({
+      eventType: "returned",
+      productId: 1,
+      locationId: 1,
+      caseId: 7,
+      lot: "0001681425",
+      expiry: "2028-11-01",
+      qty: 1,
+      byUserId: 1,
+      at: `${dayIso} 15:10:00`,
+    });
+    dash = await getSupplyChainDashboard(new Date(), created.db);
+    expect(dash.takenTodayQty).toBe(4);
+    expect(dash.takenToday.some((r) => r.catalogNumber === "RSS802")).toBe(false);
   });
 });

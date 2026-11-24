@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { StockTable } from "@/components/StockTable";
 import { listArrivalLocations } from "@/lib/arrival";
@@ -61,8 +60,8 @@ export default async function StockPage({
     const suggestion = reorderByProduct.get(row.productId);
     return {
       ...row,
-      parLevel: suggestion?.parLevel ?? null,
-      lowStock: suggestion?.lowStock ?? false,
+      parLevel: row.parLevel,
+      lowStock: row.belowPar,
       suggestion: suggestion?.suggestion ?? "No par level on this product.",
     };
   });
@@ -78,23 +77,14 @@ export default async function StockPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Stock on hand</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Derived from stock events. Expiring soon uses each vendor&apos;s{" "}
-          <code>expiry_rules.days_before</code>.
-          {user.role !== "tech" ? (
-            <>
-              {" "}
-              <Link href="/reorder" className="underline">
-                Reorder view
-              </Link>
-            </>
-          ) : null}
+          Read-only. Derived from stock events. Expiring soon uses each
+          vendor&apos;s expiry alert days.
         </p>
         <p className="mt-1 text-sm text-slate-700">
           Alerts:{" "}
           <strong className="text-amber-800">{expiring} expiring</strong>,{" "}
           <strong className="text-red-800">{expired} expired</strong>,{" "}
           <strong className="text-amber-800">{belowPar} below par</strong>.
-          {user.role !== "tech" ? " Reorder notes a suggestion." : ""}
         </p>
       </div>
       <Suspense fallback={<p className="text-sm">Loading…</p>}>
@@ -103,8 +93,8 @@ export default async function StockPage({
           locations={locations.map((l) => ({ id: l.id, name: l.name }))}
           vendors={vendors.map((v) => ({ id: v.id, name: v.name }))}
           filters={{ locationId, vendorId, flag }}
-          canDispose={canManageSettings(user)}
-          canReorder={user.role !== "tech"}
+          canDispose={false}
+          canReorder={false}
         />
       </Suspense>
     </div>

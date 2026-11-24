@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type AppDb } from "@/db";
 import {
   cases,
@@ -10,10 +10,11 @@ import {
   vendors,
   type User,
 } from "@/db/schema";
+import { eventDay } from "@/lib/event-time";
 import { listReorderView } from "@/lib/reorder";
 import { listStockView } from "@/lib/stock-view";
 
-export const DASHBOARD_ROLES = ["supply_chain", "admin"] as const;
+export const DASHBOARD_ROLES = ["supply_chain", "admin", "category_owner"] as const;
 
 export function canAccessDashboard(
   user: User | null | undefined,
@@ -92,18 +93,19 @@ export type SupplyChainDashboard = {
 };
 
 /**
- * supply_chain / admin dashboard: taken today, open exceptions,
+ * supply_chain / admin dashboard: used today (net of returns), open exceptions,
  * lots expiring within 30 days, and low-stock vs par.
  */
 export async function getSupplyChainDashboard(
   today: Date = new Date(),
   db: AppDb = getDb(),
 ): Promise<SupplyChainDashboard> {
-  const { start, end, dayIso } = dayBounds(today);
+  const { dayIso } = dayBounds(today);
 
-  const pulled = await db
+  const todayEvents = await db
     .select({
       stockEventId: stockEvents.id,
+      eventType: stockEvents.eventType,
       at: stockEvents.at,
       productId: stockEvents.productId,
       catalogNumber: products.catalogNumber,
@@ -127,26 +129,42 @@ export async function getSupplyChainDashboard(
     .leftJoin(rooms, eq(cases.roomId, rooms.id))
     .where(
       and(
-        eq(stockEvents.eventType, "pulled"),
-        gte(stockEvents.at, start),
-        lt(stockEvents.at, end),
+        inArray(stockEvents.eventType, ["pulled", "returned"]),
+        sql`substr(${stockEvents.at}, 1, 10) = ${dayIso}`,
       ),
     );
 
-  const takenToday: TakenTodayRow[] = pulled.map((r) => ({
-    stockEventId: r.stockEventId,
-    at: r.at,
-    productId: r.productId,
-    catalogNumber: r.catalogNumber,
-    description: r.description,
-    vendorName: r.vendorName,
-    locationName: r.locationName,
-    lot: r.lot,
-    expiry: r.expiry,
-    qty: r.qty,
-    caseId: r.caseId,
-    roomName: r.roomName,
-  }));
+  type Acc = TakenTodayRow;
+  const grouped = new Map<string, Acc>();
+  for (const r of todayEvents) {
+    if (eventDay(r.at) !== dayIso) continue;
+    const key = `${r.productId}|${r.lot ?? ""}|${r.expiry ?? ""}|${r.caseId ?? ""}`;
+    const cur = grouped.get(key) ?? {
+      stockEventId: r.stockEventId,
+      at: r.at,
+      productId: r.productId,
+      catalogNumber: r.catalogNumber,
+      description: r.description,
+      vendorName: r.vendorName,
+      locationName: r.locationName,
+      lot: r.lot,
+      expiry: r.expiry,
+      qty: 0,
+      caseId: r.caseId,
+      roomName: r.roomName,
+    };
+    if (r.eventType === "pulled") cur.qty += r.qty;
+    else cur.qty -= r.qty;
+    if (r.eventType === "pulled" && r.stockEventId < cur.stockEventId) {
+      cur.stockEventId = r.stockEventId;
+      cur.at = r.at;
+    }
+    grouped.set(key, cur);
+  }
+
+  const takenToday: TakenTodayRow[] = [...grouped.values()]
+    .filter((r) => r.qty > 0)
+    .sort((a, b) => a.at.localeCompare(b.at) || a.stockEventId - b.stockEventId);
 
   const openExc = await db
     .select({

@@ -78,7 +78,7 @@ describe("settings create product + access", () => {
         gtin: "00012345678905",
         hibc: "+H123TEST0",
       },
-      4,
+      2,
       db,
     );
 

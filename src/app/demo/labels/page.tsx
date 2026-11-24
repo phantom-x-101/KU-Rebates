@@ -1,38 +1,16 @@
-import Link from "next/link";
 import { resetDemoAction } from "@/app/demo/actions";
 import { PrintLabelsButton } from "@/components/PrintLabelsButton";
 import {
   DEMO_LABELS,
-  expiringLotBarcode,
   labelSymbolText,
   type DemoLabel,
 } from "@/lib/demo-labels";
 import { barcodeDataUrl } from "@/lib/render-barcode";
-import { listStockView } from "@/lib/stock-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function LabelSheetPage() {
-  let labels: DemoLabel[] = [...DEMO_LABELS];
-  try {
-    const stock = await listStockView({});
-    const expiring = stock.find((row) => row.lot === "EXPIRINGSOON1");
-    if (expiring?.expiry) {
-      labels = [
-        ...labels,
-        {
-          id: "expiring",
-          title: "Expiring Vendor C mapping lot (placeholder)",
-          caption: `VC-MAP-01 · lot EXPIRINGSOON1 · exp ${expiring.expiry}`,
-          barcode: expiringLotBarcode(expiring.expiry),
-          symbology: "gs1-128",
-          note: "Already on the shelf. Use it to show an item that is not on your new case.",
-        },
-      ];
-    }
-  } catch {
-    // Sheet still prints the static labels if the database is not seeded.
-  }
+  const labels: DemoLabel[] = [...DEMO_LABELS];
 
   const images = await Promise.all(
     labels.map(async (label) => {
@@ -58,13 +36,11 @@ export default async function LabelSheetPage() {
         <div>
           <h1 className="text-3xl font-bold">Demo labels</h1>
           <p className="mt-1 max-w-2xl text-slate-700">
-            The first labels copy the real packages: each has an item code, then a
-            separate lot-and-expiry code. Scan the item first, then its lot label.
-            Cardiva labels are Code 39 HIBC. The line under each code is exactly
-            what a scan types into the station. The DECA cable pack is
-            hospital-owned and on no contract. Placeholder items follow, with an
-            expired code and an unknown code. Real digits were read from photos:
-            scan the real package once and compare.
+            Terry Terumo uses the Terumo labels, Pat Cardiva the HIBC pair,
+            Nico NuVision the NuVision pair. Scan the item first, then its lot
+            label. Alex uses the DECA pack (already on the shelf, not on any
+            contract). The unknown code is rejected on check-in and creates no
+            stock event.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -74,12 +50,9 @@ export default async function LabelSheetPage() {
               type="submit"
               className="rounded-lg bg-pc-teal px-4 py-2 font-semibold text-white"
             >
-              Reset demo
+              Reset Data
             </button>
           </form>
-          <Link href="/demo" className="text-sm font-semibold underline">
-            Simulate Flow
-          </Link>
         </div>
       </div>
       <div className="space-y-6">

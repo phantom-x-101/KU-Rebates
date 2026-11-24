@@ -484,8 +484,9 @@ export const exceptions = sqliteTable(
     check(
       "exceptions_type_check",
       sql`${t.type} IN (
-        'case_open_past_timeout','expired_on_shelf','bill_only_unmapped',
-        'not_on_any_contract','missing_from_item_master')`,
+        'case_open_past_timeout','expired_on_shelf','expiring_soon','low_stock',
+        'bill_only_unmapped','rejected_arrival','not_on_any_contract',
+        'missing_from_item_master','unknown_tag','expired_unit')`,
     ),
     check(
       "exceptions_status_check",
@@ -589,6 +590,35 @@ export const stockEvents = sqliteTable(
   ],
 );
 
+export const units = sqliteTable(
+  "units",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tagEpc: text("tag_epc").notNull().unique(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id),
+    vendorId: integer("vendor_id")
+      .notNull()
+      .references(() => vendors.id),
+    lot: text("lot").notNull(),
+    expiry: text("expiry").notNull(),
+    status: text("status").notNull(),
+    checkedInAt: text("checked_in_at").notNull(),
+    checkedInBy: integer("checked_in_by").references(() => users.id),
+    caseId: integer("case_id").references(() => cases.id),
+    checkedOutAt: text("checked_out_at"),
+  },
+  (t) => [
+    index("idx_units_vendor_status").on(t.vendorId, t.status),
+    index("idx_units_product").on(t.productId),
+    check(
+      "units_status_check",
+      sql`${t.status} IN ('in_stock','checked_out','expired')`,
+    ),
+  ],
+);
+
 export const expiryRules = sqliteTable("expiry_rules", {
   id: integer("id").primaryKey(),
   vendorId: integer("vendor_id").references(() => vendors.id),
@@ -605,3 +635,5 @@ export type UserRole =
   | "vendor_rep";
 
 export type StockEventType = "arrived" | "pulled" | "returned" | "expired";
+export type UnitStatus = "in_stock" | "checked_out" | "expired";
+export type Unit = typeof units.$inferSelect;

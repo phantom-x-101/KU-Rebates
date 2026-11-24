@@ -167,8 +167,9 @@ export function VendorPortal({
           </div>
         </div>
         <p className="text-xs text-slate-500">
-          Closed cases only: anything pulled and not returned counts as used.
-          Case shown as date, room, and procedure type — no patient identifiers.
+          Each use is billable (KU pays now). A return nets that unit out of
+          usage. Case shown as date, room, and procedure type — no patient
+          identifiers.
         </p>
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-left text-sm">

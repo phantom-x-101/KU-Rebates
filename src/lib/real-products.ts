@@ -5,8 +5,21 @@
  */
 import { withHibcCheck } from "@/lib/barcode";
 
-export const NUVISION_VENDOR_ID = 8;
-export const IN_HOUSE_VENDOR_ID = 9;
+export const TERUMO_VENDOR_ID = 1;
+export const CARDIVA_VENDOR_ID = 2;
+export const NUVISION_VENDOR_ID = 3;
+export const IN_HOUSE_VENDOR_ID = 4;
+
+/** The three consignment vendors. In-house is not a vendor. */
+export const COMMERCIAL_VENDOR_IDS = [
+  TERUMO_VENDOR_ID,
+  CARDIVA_VENDOR_ID,
+  NUVISION_VENDOR_ID,
+] as const;
+
+/** Invented lots so the dashboard still has expired / expiring examples. */
+export const DEMO_EXPIRED_LOT = "DEMO-EXPIRED";
+export const DEMO_SOON_LOT = "DEMO-SOON";
 
 export type RealProduct = {
   id: number;
@@ -30,7 +43,7 @@ export type RealProduct = {
 
 export const TERUMO_8FR: RealProduct = {
   id: 1,
-  vendorId: 1,
+  vendorId: TERUMO_VENDOR_ID,
   catalogNumber: "RSS802",
   description: "Terumo Pinnacle Introducer Sheath 8 Fr",
   category: "sheath",
@@ -46,12 +59,12 @@ export const TERUMO_8FR: RealProduct = {
 
 export const CARDIVA_VASCADE: RealProduct = {
   id: 2,
-  vendorId: 2,
+  vendorId: CARDIVA_VENDOR_ID,
   catalogNumber: "800-612C",
   description: "Cardiva Vascade MVP closure",
   category: "closure",
   unitPrice: 395,
-  parLevel: 3,
+  parLevel: 2,
   hospitalOwned: false,
   gtin: null,
   hibc: "+M729800612C0",
@@ -61,8 +74,8 @@ export const CARDIVA_VASCADE: RealProduct = {
 };
 
 export const TERUMO_11FR: RealProduct = {
-  id: 25,
-  vendorId: 1,
+  id: 3,
+  vendorId: TERUMO_VENDOR_ID,
   catalogNumber: "RSS106",
   description: "Terumo Pinnacle Introducer Sheath 11 Fr",
   category: "sheath",
@@ -77,7 +90,7 @@ export const TERUMO_11FR: RealProduct = {
 };
 
 export const NUVISION_NAV: RealProduct = {
-  id: 26,
+  id: 4,
   vendorId: NUVISION_VENDOR_ID,
   catalogNumber: "FG12081",
   description: "NuVision NAV Ultrasound Catheter",
@@ -94,7 +107,7 @@ export const NUVISION_NAV: RealProduct = {
 
 /** Sterilized in-house instrument pack. Not vendor stock and on no contract. */
 export const DECA_CABLE_PACK: RealProduct = {
-  id: 27,
+  id: 5,
   vendorId: IN_HOUSE_VENDOR_ID,
   catalogNumber: "CB3410CT",
   description: "Pack EP Lab SMALL DECA Cable",
@@ -110,12 +123,55 @@ export const DECA_CABLE_PACK: RealProduct = {
   qty: 1,
 };
 
+/** Extra catalog rows so vendor most/least used KPIs are not the same product. Demo data. */
+export const CARDIVA_DEMO_SHEATH: RealProduct = {
+  id: 6,
+  vendorId: CARDIVA_VENDOR_ID,
+  catalogNumber: "DEMO-C-801",
+  description: "Cardiva introducer sheath (demo)",
+  category: "sheath",
+  unitPrice: 120,
+  parLevel: 2,
+  hospitalOwned: false,
+  gtin: null,
+  hibc: null,
+  lot: "DEMO-C-LOT-1",
+  expiry: "2028-06-01",
+  qty: 8,
+};
+
+export const NUVISION_DEMO_CATH: RealProduct = {
+  id: 7,
+  vendorId: NUVISION_VENDOR_ID,
+  catalogNumber: "DEMO-NV-ICE",
+  description: "NuVision ICE catheter (demo)",
+  category: "ultrasound catheter",
+  unitPrice: 1800,
+  parLevel: 2,
+  hospitalOwned: false,
+  gtin: null,
+  hibc: null,
+  lot: "DEMO-NV-LOT-1",
+  expiry: "2028-09-01",
+  qty: 8,
+};
+
+export const PLACEHOLDER_PRODUCTS: RealProduct[] = [
+  CARDIVA_DEMO_SHEATH,
+  NUVISION_DEMO_CATH,
+];
+
 export const REAL_PRODUCTS: RealProduct[] = [
   TERUMO_8FR,
   CARDIVA_VASCADE,
   TERUMO_11FR,
   NUVISION_NAV,
   DECA_CABLE_PACK,
+];
+
+export const SEED_PRODUCTS: RealProduct[] = [
+  ...REAL_PRODUCTS,
+  ...PLACEHOLDER_PRODUCTS,
 ];
 
 function yymmdd(expiryIso: string) {

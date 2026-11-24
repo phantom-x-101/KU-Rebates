@@ -1,87 +1,62 @@
 # Consignment (Container 1): workflow spec
 
-Source: *ku-rebate-workflowv8.pdf*, pages 1 to 4, 7 and 11 to 12, rewritten as text. Numbers and vendor names marked (placeholder) are not real KU data.
+Vendor-led prototype. Numbers, par levels and invented lots marked as demo data are not real KU data.
 
 ## Purpose
 
-Show, without an on-site audit, what stock is where, what was taken for each case, what was used, returned or wasted, and what is about to expire. KU's own steps stay exactly as they are. Pycube adds its scans alongside and writes nothing back to Epic, GE or Workday.
+Show, without an on-site audit, what stock is on KU's shelf, what the tech used or returned for each case, and what is expired, expiring or below par. KU's own steps stay as they are. Pycube writes nothing back to Epic, GE or Workday.
 
-## KU today (as mapped on site)
+## How the flow works now
 
-1. Supplies are **on the lab's shelf** (the vendor rep keeps the shelf stocked on consignment) **or brought in for the case**.
-2. The tech **collects and preps** the items for the case.
-3. Items are **used in the case**, or opened and wasted, or put back.
-4. KU **reorders by par level or low stock** (requisition), otherwise by expiry. Restocking of consignment: to confirm with KU.
-5. KU pays only for what was used. The vendor keeps ownership of unused consignment stock. Expired stock on the shelf is paid for by the vendor.
+1. **Vendor check-in.** On Check in, scan the product barcode first (item, then lot and expiry), then scan the RFID tag. Any real tag ID (8–40 alphanumeric) is accepted. One tag links to one unit. A tag already in use, another vendor's product, or hospital-owned stock is rejected. Writes `units` plus `stock_events.arrived` and `audit_log`.
+2. **Tech check-out.** Alex opens a case and scans a linked tag to **Check out**, or uses Scan barcode for untagged items. That scan is the billable event ("KU pays now"). The data model still stores `stock_events.event_type = pulled`.
+3. **Tech return.** Scanning a checked-out tag again, or the untagged RETURN barcode path, puts the unit back in stock. The return nets that unit out of usage, dashboards, and KU-pays counts. No vendor confirmation.
+4. **Close.** Alex closes the case. There is no waste or opened-item flow yet.
+5. **Unknown or expired tag.** An unknown tag opens an **Unknown tag** exception. An expired unit blocks checkout and opens **Expired unit**.
 
-Pain points seen on site: shelves look like a pantry and are hard to read at a glance; shipments arrive often and inventory is updated by hand; dedicated staff visually check and order by consumption; items sit past expiry before use (the "overflow" problem). The vendors themselves suggested a system.
-
-## How items reach the room (three modes: a setting per product and department)
-
-| Mode | Today | What Pycube does | Examples |
-|---|---|---|---|
-| `on_shelf` | Vendor keeps shelf stocked; KU pays only on use; tech pulls what the case needs | Scan on arrival (later), scan when pulled (later), expiry alerts to the rep | EP catheters, sheaths, closure devices |
-| `brought_in_for_case` | Not on shelf beforehand; brought in for this case; tech collects and preps; unused goes back | Logged as it enters the room so unused items are seen leaving | EP items for one case; ortho hips and knees in several sizes |
-| `not_kept_in_stock` | Too costly or needs controlled temperature or humidity; requested a day or so before the case | Logged when it arrives for the case, then scanned after the case | High-cost implants |
-
-## What Pycube adds (this build)
-
-- **Scan on arrival**: stock is logged as it reaches the shelf or room (item, lot, expiry, location, time).
-- **Scan when pulled**: items are logged as the tech collects them for a case (linked to a case).
-- **Case close-out (thin slice of Container 2)**: after the case the tech scans back each item that is **returned**. Anything taken and not returned counts as **used**. The full Epic-adjacent scan flow is built later.
-- **Vendor portal**: each rep sees only their own stock, usage and expiry dates, with no on-site audit.
-- **Expiry alerts**: the rep is alerted before expiry (days set per vendor). Expired stock is flagged "expired on shelf: rep pays".
-- **Reorder view**: shows par level vs on-hand and suggests when stock is low. KU places the order; Pycube never does.
-- **IEN at the door (later)**: logs what comes into the room so leftovers are sorted into used, opened and returned. Not in this build.
-
-## The check: Taken = used + returned
-
-For each case: taken (pulled) = returned + used, where used is everything not returned. There is no gap, so closing a case never creates an exception. The close shows "Used (not returned): N" and "Returned: N". The result moves on to Container 3 (not built yet).
-
-Example from the document: 3 taken for the case, 1 returned, so 2 used.
-
-## Exceptions this build creates
-
-| Type | When | Owner |
-|---|---|---|
-| `case_open_past_timeout` | A case is still open after the close-out timeout (setting `case_closeout_timeout_hours`, default 24). Checked when the Exceptions page loads; one row per case | supply_chain |
-| `expired_on_shelf` | On-hand lot past its expiry date | supply_chain (the rep pays) |
-| `bill_only_unmapped` | A scanned barcode matches no product (station, arrival or pull). One open row per barcode; resolved when the product is added at the station. A lot-and-expiry label alone never opens one | supply_chain |
-| `not_on_any_contract` | A product with no contract line is arrived or pulled (for example the hospital-owned DECA cable pack). One open row per product | supply_chain |
-
-Real labels carry two separate barcodes. The item barcode is GS1 with only (01) GTIN, or HIBC primary `+LIC product UoM check` (Code 39). The lot barcode is GS1 with only (17) expiry and (10) lot, or HIBC secondary `+$$3 YYMMDD lot link check`. The station takes the item scan, waits, and attaches the next lot scan to it. The HIBC link character must match the item's check character. If no lot label is scanned, the tech picks the lot from a list (pull: lots on hand, earliest expiry first; return: lots still out on the case) or types it on arrival.
+The hospital-owned DECA cable pack is already on the shelf. Nobody checks it in. Checking it out flags **Not on any contract**.
 
 ## Roles
 
-- **tech**: scan on arrival, scan when pulled, open and close a case, close-out
-- **supply_chain**: stock view, reorder view, exception queue, settings
-- **vendor_rep**: portal only, own vendor's stock, usage and expiry
-- **admin**: everything, including seed and imports
+- **vendor_rep** (Terry Terumo, Pat Cardiva, Nico NuVision): check in tagged units; inventory of individual units plus editable par and expiry-alert days; dashboard (most/least used, usage over time, on hand vs par, expiring soon); read-only returns; own exception queue. Isolation is enforced in the data layer.
+- **tech** (Alex): check out and return only. Open and close cases. Cannot check in.
+- **supply_chain** (Sam): read-only inventory, usage, returns and exceptions across the three vendors.
 
-## Settings (change with product, vendor, storage)
+Pycube never places an order.
 
-- Products and vendors, with identifiers (GTIN, HIBC, catalog number)
-- Storage locations (shelf, room, central supply, controlled storage)
-- `product_access`: mode per product and department, location, par level
-- `expiry_rules`: days before expiry to alert the rep, and whether the vendor pays for expired stock
+## Stock
 
-## Out of scope for this build
+On hand is derived: arrived + returned − pulled − expired. For lots that have tagged units, on hand = units with status `in_stock`. The DECA pack is seeded on hand (untagged).
 
-Contracts, tiers, rebate calculation, forecasting, settlement and dispute screens (Container 3); the Epic-adjacent post-case scan flow (Container 2); label photo reading; any integration with Epic, GE, Workday or GHX.
+## Exceptions this build creates
 
-## Start with the EP lab
+| Type | When | Who sees it |
+|---|---|---|
+| `expired_on_shelf` | On-hand lot past expiry | Vendor (own products) and KU |
+| `expiring_soon` | On-hand lot within the vendor's alert days | Vendor (own products) and KU |
+| `low_stock` | Product on-hand below par | Vendor (own products) and KU |
+| `bill_only_unmapped` | Unknown barcode on check-in | The checking-in vendor and KU |
+| `rejected_arrival` | Check-in of another vendor's or hospital-owned item | The checking-in vendor and KU |
+| `not_on_any_contract` | A used item has no contract line (DECA pack) | KU only |
+| `case_open_past_timeout` | A case still open after the timeout | KU only |
+| `unknown_tag` | Tag ID not in `units` | KU |
+| `expired_unit` | Checkout of a tagged unit past expiry | Vendor (own product) and KU |
 
-EP lab is mapped. Cath lab is next (shelves, hanging stock and blue bags). Ortho is later (hips and knees in several sizes). A new lab only changes the settings for that lab.
+## Two-barcode labels
 
-## Demo seed data (placeholders unless noted)
+Real labels carry two barcodes. Item is GS1 (01) GTIN or HIBC primary. Lot is GS1 (17)+(10) or HIBC secondary `+$$3`. The station waits for the lot scan after the item scan.
 
-- Real products from physical packages (digits read from photos; confirm with a scan). Prices and par levels are placeholders.
-  - Terumo Pinnacle Introducer Sheath 8 Fr, REF RSS802, GTIN 00389701007496, lot 0001681425, expiry 2028-11-01 (GS1)
-  - Terumo Pinnacle Introducer Sheath 11 Fr, REF RSS106, GTIN 00389701007762, lot 0001476667, expiry 2028-07-01 (GS1)
-  - Cardiva Vascade MVP closure, catalog 800-612C, HIBC item `+M729800612C0`, lot G612C260420B, expiry 2028-04-09 (Code 39 HIBC)
-  - NuVision NAV Ultrasound Catheter, REF FG12081, GTIN 10846835026559, lot 31982149L, expiry 2027-07-02 (GS1). Vendor shown as "NuVision (manufacturer to confirm)"
-  - Pack EP Lab SMALL DECA Cable, CB3410CT: hospital-owned (`products.ku_owned = 1`), vendor "In-house", on no contract. Sterile date 2026-09-16 as read from the pack. Lot SPD-PLACEHOLDER-1 stands in for the unread load number
-- Vendor reps: Terry (Terumo), Pat (Cardiva), Nico (NuVision), plus placeholder reps for Vendors C to G
-- Placeholder Vendors C to G for all other stock. The expiring-soon lot (EXPIRINGSOON1) and the expired lot (EXPIRED-SHELF) sit on the placeholder Vendor C mapping catheter
-- One EP case: 6 items pulled (sheath x2, closure, ablation catheter, mapping catheter x2); 1 returned, so 5 used
-- One Cath 1 case left open two days ago (case open past timeout) and one unknown barcode `+H999DEMO01` (placeholder) to demonstrate the exceptions
+## Out of scope
+
+Contracts, tiers, rebates, ordering, integrations, patient information, and waste/opened-item flow.
+
+## Demo seed (invented lots, quantities and dates are demo data)
+
+- Terumo: RSS802 8 Fr, RSS106 11 Fr. Rep: Terry Terumo. RSS802 is below par. RSS106 has lot `DEMO-EXPIRED`.
+- Cardiva: Vascade MVP 800-612C. Rep: Pat Cardiva. Lot `DEMO-SOON` expires within 30 days.
+- NuVision: NAV Ultrasound Catheter FG12081. Rep: Nico NuVision.
+- Hospital-owned: Pack EP Lab SMALL DECA Cable CB3410CT. No vendor, no rep, not on any contract, seeded on hand.
+- Users: Alex (tech), Sam (supply chain), Terry Terumo, Pat Cardiva, Nico NuVision.
+- Six closed EP cases over two weeks plus one open timeout case, four uses today (demo SKUs), and one unknown-scan exception for Terry Terumo.
+- Placeholder Cardiva and NuVision SKUs so most/least used are different products.
+- Fake tag IDs `E200-0000-0001` through `E200-0000-0012` (demo data). Terry checks in three Terumo units; Alex checks one out by tag.

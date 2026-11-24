@@ -64,7 +64,7 @@ describe("Phase 4 EP case end to end", () => {
 
     const sheathBefore = await soh(1, "0001681425");
     const closureBefore = await soh(2, "G612C260420B");
-    const ablBefore = await soh(3, "VCABL1001");
+    const sheath11Before = await soh(3, "0001476667");
 
     const c = await openCase(
       { departmentId: 1, roomId: 1, procedureTypeId: 1 },
@@ -105,15 +105,15 @@ describe("Phase 4 EP case end to end", () => {
       db,
     );
 
-    const abl = await identifyProduct("VC-ABL-01", db);
+    const sheath11 = await identifyProduct("RSS106", db);
     await recordPull(
       {
         caseId: c.id,
-        rawBarcode: "VC-ABL-01",
-        productId: abl.product!.productId,
+        rawBarcode: "RSS106",
+        productId: sheath11.product!.productId,
         locationId: 1,
-        lot: "VCABL1001",
-        expiry: "2027-06-01",
+        lot: "0001476667",
+        expiry: "2028-07-01",
         qty: 1,
         lotExpirySource: "manual",
       },
@@ -123,26 +123,24 @@ describe("Phase 4 EP case end to end", () => {
 
     expect(await soh(1, "0001681425")).toBe(sheathBefore - 1);
     expect(await soh(2, "G612C260420B")).toBe(closureBefore - 1);
-    expect(await soh(3, "VCABL1001")).toBe(ablBefore - 1);
+    expect(await soh(3, "0001476667")).toBe(sheath11Before - 1);
 
-    // Only the ablation catheter comes back; the other two count as used.
     await closeoutReturned(
       {
         caseId: c.id,
         productId: 3,
         locationId: 1,
-        lot: "VCABL1001",
-        expiry: "2027-06-01",
+        lot: "0001476667",
+        expiry: "2028-07-01",
         qty: 1,
       },
       1,
       db,
     );
 
-    // Used items stay off shelf; returned ablation is back
     expect(await soh(1, "0001681425")).toBe(sheathBefore - 1);
     expect(await soh(2, "G612C260420B")).toBe(closureBefore - 1);
-    expect(await soh(3, "VCABL1001")).toBe(ablBefore);
+    expect(await soh(3, "0001476667")).toBe(sheath11Before);
 
     const lines = await listCasePullLines(c.id, db);
     expect(lines.map((l) => [l.productId, l.remaining]).sort()).toEqual([

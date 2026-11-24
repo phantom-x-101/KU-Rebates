@@ -12,8 +12,13 @@ import {
 const TYPE_LABELS: Record<string, string> = {
   case_open_past_timeout: "Case open past timeout",
   expired_on_shelf: "Expired on shelf",
+  expiring_soon: "Expiring soon",
+  low_stock: "Low stock",
   bill_only_unmapped: "Unknown or unmapped barcode",
+  rejected_arrival: "Rejected arrival",
   not_on_any_contract: "Not on any contract",
+  unknown_tag: "Unknown tag",
+  expired_unit: "Expired unit",
 };
 
 export type ExceptionRow = {
@@ -118,10 +123,12 @@ export function ExceptionQueue({
   rows,
   owners,
   filters,
+  readOnly = false,
 }: {
   rows: ExceptionRow[];
   owners: Owner[];
   filters: { type: string; container: string; status: string };
+  readOnly?: boolean;
 }) {
   const router = useRouter();
 
@@ -215,7 +222,9 @@ export function ExceptionQueue({
                 <td className="py-2 pr-3">{r.status}</td>
                 <td className="py-2 pr-3">{r.ownerName ?? "—"}</td>
                 <td className="py-2">
-                  {r.status !== "resolved" ? (
+                  {readOnly ? (
+                    <span className="text-xs text-slate-500">View only</span>
+                  ) : r.status !== "resolved" ? (
                     <>
                       <AssignForm exceptionId={r.id} owners={owners} />
                       <ResolveForm exceptionId={r.id} />

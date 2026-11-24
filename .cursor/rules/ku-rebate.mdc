@@ -11,7 +11,7 @@ A prototype that runs alongside KU Medical Center's existing systems. Read `docs
 
 1. NO patient identifiers anywhere: no MRN, name, DOB, encounter number, in any table, log, seed or UI. A "case" holds only department, room, procedure type and timestamps.
 2. NO write-back. Pycube never sends anything to Epic, GE or Workday. KU data arrives only as file imports. Do not add integration code for those systems.
-3. Build only what the current phase asks for. Container 1 (Consignment) is the first build. Container 2 (Consumption) is a thin close-out slice only. Container 3 (Contracts) is not built yet; its tables may exist but have no screens.
+3. Build only what the current phase asks for. Container 1 (Consignment) is vendor-led check-in + tech CHECK OUT/RETURN. Container 2 (Consumption) is a thin close-out slice only. Container 3 (Contracts) is not built yet; its tables may exist but have no screens. Do not build contracts, tiers, rebates, ordering, integrations, waste/opened-item flow, or any patient information.
 4. Every state change writes a row to `audit_log` (who, when, container, entity, action).
 5. Every exception records `source_container` (1, 2 or 3).
 6. KU decides and places orders. Pycube only shows information, alerts and recommendations. Never build an "order" or "purchase" action.
@@ -25,11 +25,14 @@ A prototype that runs alongside KU Medical Center's existing systems. Read `docs
 ## Conventions
 
 - All business logic lives in `src/lib/` as plain functions with unit tests, never inside route handlers or components.
-- Stock on hand is DERIVED from `stock_events`, never stored: on_hand = arrived + returned - pulled - expired.
+- Stock on hand is DERIVED from `stock_events`, never stored: on_hand = arrived + returned - pulled - expired. For lots that have tagged `units`, on hand = units in_stock. Check-in/out also writes stock_events so usage stays consistent.
+- The UI label Check out maps to `event_type` pulled. Scanning Check out is the billable event. RETURN puts the item back on the shelf and lists it for the vendor (read-only). A second scan of a checked-out tag is a return.
 - Barcode parsing lives in one module, `src/lib/barcode.ts`. GS1 gives item, lot and expiry. HIBC gives the item only, so lot and expiry are entered manually in the prototype (photo reading is a later feature).
-- A vendor_rep user may only ever see rows for their own vendor. Enforce this in the data-access layer, not just the UI.
+- Tag IDs live in `src/lib/tag.ts` (trim, uppercase, 8–40 alphanumeric). After a check-in barcode is read, the next scan is the tag. Check-out treats a matching linked tag as RFID, otherwise barcode. Check-in/out lives in `src/lib/units.ts`.
+- A vendor_rep user may only ever see or check in rows for their own vendor. Enforce this in the data-access layer, not just the UI. Unknown or other-vendor check-ins create no stock event.
+- The tech role checks out and returns only. Vendors check in. Supply chain, category owner and admin are read-only.
 - Dates are ISO strings. Quantities are integers for items.
-- Seed data lives in `db/seed.ts` and uses placeholders such as "Vendor X". Mark any invented number as a placeholder in the UI footer.
+- Seed data lives in `db/seed.ts` plus `db/demo-story.ts`. Keep only Terumo, Cardiva, NuVision and the hospital-owned DECA pack. Seeded users: Alex (tech), Sam (supply_chain), Terry Terumo, Pat Cardiva, Nico NuVision. Mark invented lots (`DEMO-EXPIRED`, `DEMO-SOON`), tag IDs (`E200-0000-0001` and up), quantities, par levels and dates as demo data in the UI footer.
 - Small, reviewable commits: one phase per commit. Do not refactor unrelated code.
 
 ## Definition of done for any phase

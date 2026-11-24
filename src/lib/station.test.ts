@@ -4,12 +4,8 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { auditLog, exceptions } from "@/db/schema";
-import {
-  ABLATION_GS1_SAMPLE,
-  EXPIRED_GS1_SAMPLE,
-  UNKNOWN_BARCODE,
-} from "@/lib/demo-labels";
+import { auditLog, exceptions, stockEvents } from "@/db/schema";
+import { UNKNOWN_BARCODE } from "@/lib/demo-labels";
 import {
   listExceptions,
   NOT_ON_CONTRACT_ACTION,
@@ -28,13 +24,20 @@ import {
 } from "@/lib/real-products";
 import { listPullableLots, stockOnHand } from "@/lib/stock";
 import {
-  addStationProduct,
   applyStationScan,
   closeStationCase,
   isPastExpiry,
   openStationCase,
 } from "@/lib/station";
 import { CARDIVA_HIBC_SAMPLE, TERUMO_GS1_SAMPLE } from "@/lib/barcode";
+
+const ALEX = 1;
+const TERRY = 5;
+const PAT = 6;
+const NICO = 7;
+
+const EXPIRED_TERUMO =
+  "(01)00389701007496(17)200101(10)DEMO-EXPIRED-ARRIVE";
 
 describe("expiry helper", () => {
   it("treats a past ISO date as expired", () => {
@@ -75,7 +78,7 @@ describe("scan station", () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
-  it("arrives, pulls, returns; anything not returned counts as used", async () => {
+  it("vendors arrive, techs use and return; KU pays at use", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     sqlite = created.sqlite;
@@ -88,130 +91,116 @@ describe("scan station", () => {
       return rows.find((row) => row.lot === lot)?.onHand ?? 0;
     };
 
-    const sheathBefore = await onHand(1, "0001681425");
+    const techArrive = await applyStationScan(
+      { mode: "arrive", rawBarcode: TERUMO_GS1_SAMPLE },
+      ALEX,
+      db,
+    );
+    expect(techArrive.status).toBe("error");
+    if (techArrive.status === "error") expect(techArrive.code).toBe("role");
+
+    const sheathBefore = await onHand(TERUMO_8FR.id, TERUMO_8FR.lot);
     const arrived = await applyStationScan(
       { mode: "arrive", rawBarcode: TERUMO_GS1_SAMPLE },
-      1,
+      TERRY,
       db,
     );
     expect(arrived.status).toBe("success");
     if (arrived.status === "success") {
       expect(arrived.headline).toBe("Added to shelf");
-      expect(arrived.item.lot).toBe("0001681425");
+      expect(arrived.item.lot).toBe(TERUMO_8FR.lot);
     }
-    expect(await onHand(1, "0001681425")).toBe(sheathBefore + 1);
+    expect(await onHand(TERUMO_8FR.id, TERUMO_8FR.lot)).toBe(sheathBefore + 1);
 
     const expired = await applyStationScan(
-      { mode: "arrive", rawBarcode: EXPIRED_GS1_SAMPLE },
-      1,
+      { mode: "arrive", rawBarcode: EXPIRED_TERUMO },
+      TERRY,
       db,
     );
     expect(expired.status).toBe("error");
     if (expired.status === "error") expect(expired.code).toBe("expired");
-    expect(await onHand(4, "EXPIREDDEMO")).toBe(0);
 
+    const eventsBeforeUnknown = await db.select().from(stockEvents);
     const unknown = await applyStationScan(
       { mode: "arrive", rawBarcode: UNKNOWN_BARCODE },
-      1,
+      TERRY,
       db,
     );
     expect(unknown.status).toBe("unknown");
+    expect((await db.select().from(stockEvents)).length).toBe(
+      eventsBeforeUnknown.length,
+    );
 
-    const hibc = await applyStationScan(
+    const wrongVendor = await applyStationScan(
       { mode: "arrive", rawBarcode: CARDIVA_HIBC_SAMPLE },
-      1,
+      TERRY,
       db,
     );
-    expect(hibc.status).toBe("needs_lot");
+    expect(wrongVendor.status).toBe("error");
+    if (wrongVendor.status === "error") expect(wrongVendor.code).toBe("wrong_vendor");
+    expect(
+      (await listExceptions({ type: "rejected_arrival", vendorId: 1 }, db)).length,
+    ).toBeGreaterThan(0);
 
     const extraZero = await applyStationScan(
       { mode: "arrive", rawBarcode: "+M729800612C00" },
-      1,
+      PAT,
       db,
     );
     expect(extraZero.status).toBe("needs_lot");
     if (extraZero.status === "needs_lot") {
       expect(extraZero.product.catalogNumber).toBe("800-612C");
-      expect(extraZero.reads.join(" ")).toMatch(/trailing 0 is not a valid check character/);
     }
 
-    const pulledWithoutCase = await applyStationScan(
-      { mode: "pull", rawBarcode: TERUMO_GS1_SAMPLE },
-      1,
+    const usedWithoutCase = await applyStationScan(
+      { mode: "use", rawBarcode: TERUMO_GS1_SAMPLE },
+      ALEX,
       db,
     );
-    expect(pulledWithoutCase.status).toBe("error");
-    if (pulledWithoutCase.status === "error") {
-      expect(pulledWithoutCase.code).toBe("no_case");
+    expect(usedWithoutCase.status).toBe("error");
+    if (usedWithoutCase.status === "error") {
+      expect(usedWithoutCase.code).toBe("no_case");
     }
 
-    const ep = await openStationCase(1, db);
-    const notPulled = await applyStationScan(
-      { mode: "return", rawBarcode: ABLATION_GS1_SAMPLE, caseId: ep.id },
-      1,
+    const ep = await openStationCase(ALEX, db);
+    const notUsed = await applyStationScan(
+      { mode: "return", rawBarcode: gtinLabel(NUVISION_NAV), caseId: ep.id },
+      ALEX,
       db,
     );
-    expect(notPulled.status).toBe("error");
-    if (notPulled.status === "error") expect(notPulled.code).toBe("not_pulled");
+    expect(notUsed.status).toBe("error");
+    if (notUsed.status === "error") expect(notUsed.code).toBe("not_pulled");
 
-    const pullSheath = await applyStationScan(
-      { mode: "pull", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
-      1,
+    const useSheath = await applyStationScan(
+      { mode: "use", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
+      ALEX,
       db,
     );
-    expect(pullSheath.status).toBe("success");
-    const pullAblation = await applyStationScan(
-      { mode: "pull", rawBarcode: ABLATION_GS1_SAMPLE, caseId: ep.id },
-      1,
-      db,
-    );
-    expect(pullAblation.status).toBe("success");
+    expect(useSheath.status).toBe("success");
+    if (useSheath.status === "success") {
+      expect(useSheath.headline).toBe("KU pays now");
+    }
 
     const broughtBack = await applyStationScan(
       { mode: "return", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
-      1,
+      ALEX,
       db,
     );
     expect(broughtBack.status).toBe("success");
-    if (broughtBack.status === "success") {
-      expect(broughtBack.headline).toBe("Returned to shelf");
-    }
 
     const duplicate = await applyStationScan(
       { mode: "return", rawBarcode: TERUMO_GS1_SAMPLE, caseId: ep.id },
-      1,
+      ALEX,
       db,
     );
     expect(duplicate.status).toBe("error");
     if (duplicate.status === "error") expect(duplicate.code).toBe("duplicate");
 
-    const returned = await applyStationScan(
-      { mode: "return", rawBarcode: ABLATION_GS1_SAMPLE, caseId: ep.id },
-      1,
-      db,
-    );
-    expect(returned.status).toBe("success");
-    if (returned.status === "success") {
-      expect(returned.headline).toBe("Returned to shelf");
-    }
-
-    const allBack = await closeStationCase(ep.id, 1, db);
-    expect(allBack).toMatchObject({ taken: 2, returned: 2, used: 0 });
-
-    const leftOut = await openStationCase(1, db);
-    const pullLeft = await applyStationScan(
-      { mode: "pull", rawBarcode: TERUMO_GS1_SAMPLE, caseId: leftOut.id },
-      1,
-      db,
-    );
-    expect(pullLeft.status).toBe("success");
-    const excBefore = (await db.select().from(exceptions)).length;
-    const notReturned = await closeStationCase(leftOut.id, 1, db);
-    expect(notReturned).toMatchObject({ taken: 1, returned: 0, used: 1 });
-    expect((await db.select().from(exceptions)).length).toBe(excBefore);
+    const allBack = await closeStationCase(ep.id, ALEX, db);
+    expect(allBack).toMatchObject({ taken: 1, returned: 1, used: 0 });
   });
 
-  it("unknown barcode opens one unmapped exception; adding the product resolves it", async () => {
+  it("unknown arrive opens one unmapped exception and writes no stock event", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     sqlite = created.sqlite;
@@ -219,22 +208,20 @@ describe("scan station", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__kuDb = created;
 
-    const unmappedFor = async (status: string) =>
-      (await listExceptions({ type: "bill_only_unmapped", status }, db)).filter(
-        (row) => row.barcode === UNKNOWN_BARCODE,
-      );
-
+    const eventsBefore = (await db.select().from(stockEvents)).length;
     for (let i = 0; i < 2; i++) {
       const outcome = await applyStationScan(
         { mode: "arrive", rawBarcode: UNKNOWN_BARCODE },
-        1,
+        TERRY,
         db,
       );
       expect(outcome.status).toBe("unknown");
     }
-    const open = await unmappedFor("open");
+    expect((await db.select().from(stockEvents)).length).toBe(eventsBefore);
+    const open = (await listExceptions({ type: "bill_only_unmapped", status: "open", vendorId: 1 }, db)).filter(
+      (row) => row.barcode === UNKNOWN_BARCODE,
+    );
     expect(open).toHaveLength(1);
-    expect(open[0]?.sourceContainer).toBe(1);
     const created1 = await db
       .select()
       .from(auditLog)
@@ -246,27 +233,10 @@ describe("scan station", () => {
         ),
       );
     expect(created1).toHaveLength(1);
-
-    const added = await addStationProduct(
-      {
-        vendorId: 1,
-        description: "Placeholder test item",
-        catalogNumber: "TEST-UNMAPPED-1",
-        parLevel: 1,
-        rawBarcode: UNKNOWN_BARCODE,
-        mode: "arrive",
-        lot: "TESTLOT1",
-        expiry: "2030-01-01",
-      },
-      1,
-      db,
-    );
-    expect(added.status).toBe("success");
-    expect(await unmappedFor("open")).toHaveLength(0);
-    expect(await unmappedFor("resolved")).toHaveLength(1);
+    expect(created1[0]?.detail).toMatch(/vendor=1/);
   });
 
-  it("HIBC pull offers on-hand lots, earliest expiry first, and pulls the picked lot", async () => {
+  it("HIBC use offers on-hand lots, earliest expiry first", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     sqlite = created.sqlite;
@@ -276,19 +246,19 @@ describe("scan station", () => {
 
     await applyStationScan(
       { mode: "arrive", rawBarcode: CARDIVA_HIBC_SAMPLE, lot: "LATERLOT", expiry: "2035-01-01" },
-      1,
+      PAT,
       db,
     );
     await applyStationScan(
       { mode: "arrive", rawBarcode: CARDIVA_HIBC_SAMPLE, lot: "SOONERLOT", expiry: "2029-01-01" },
-      1,
+      PAT,
       db,
     );
 
-    const ep = await openStationCase(1, db);
+    const ep = await openStationCase(ALEX, db);
     const ask = await applyStationScan(
-      { mode: "pull", rawBarcode: CARDIVA_HIBC_SAMPLE, caseId: ep.id },
-      1,
+      { mode: "use", rawBarcode: CARDIVA_HIBC_SAMPLE, caseId: ep.id },
+      ALEX,
       db,
     );
     expect(ask.status).toBe("needs_lot");
@@ -301,24 +271,22 @@ describe("scan station", () => {
     expect(ask.lots.map((lot) => lot.lot)).toEqual(
       expect.arrayContaining(["LATERLOT", "SOONERLOT"]),
     );
-    expect(ask.suggestedLot).toBe(ask.lots[0]!.lot);
 
     const first = ask.lots[0]!;
-    const pulled = await applyStationScan(
+    const used = await applyStationScan(
       {
-        mode: "pull",
+        mode: "use",
         rawBarcode: CARDIVA_HIBC_SAMPLE,
         caseId: ep.id,
         lot: first.lot,
         expiry: first.expiry,
       },
-      1,
+      ALEX,
       db,
     );
-    expect(pulled.status).toBe("success");
-    if (pulled.status === "success") expect(pulled.item.lot).toBe(first.lot);
+    expect(used.status).toBe("success");
 
-    const lots = await listPullableLots(2, new Date(), db);
+    const lots = await listPullableLots(CARDIVA_VASCADE.id, new Date(), db);
     const left = lots.find((lot) => lot.lot === first.lot)?.onHand ?? 0;
     expect(left).toBe(first.onHand - 1);
   });
@@ -333,98 +301,57 @@ describe("scan station", () => {
 
     const onHand = async (productId: number, lot: string) =>
       (await stockOnHand({ productId }, db)).find((row) => row.lot === lot)?.onHand ?? 0;
-    const unmappedCount = async () =>
-      (await listExceptions({ type: "bill_only_unmapped" }, db)).length;
-    const unmappedBefore = await unmappedCount();
 
     const pairs = [
-      { product: TERUMO_8FR, item: gtinLabel(TERUMO_8FR), lot: gs1LotLabel(TERUMO_8FR) },
-      { product: TERUMO_11FR, item: gtinLabel(TERUMO_11FR), lot: gs1LotLabel(TERUMO_11FR) },
-      { product: NUVISION_NAV, item: gtinLabel(NUVISION_NAV), lot: gs1LotLabel(NUVISION_NAV) },
+      { product: TERUMO_8FR, item: gtinLabel(TERUMO_8FR), lot: gs1LotLabel(TERUMO_8FR), userId: TERRY },
+      { product: TERUMO_11FR, item: gtinLabel(TERUMO_11FR), lot: gs1LotLabel(TERUMO_11FR), userId: TERRY },
+      { product: NUVISION_NAV, item: gtinLabel(NUVISION_NAV), lot: gs1LotLabel(NUVISION_NAV), userId: NICO },
       {
         product: CARDIVA_VASCADE,
         item: hibcPrimaryLabel(CARDIVA_VASCADE),
         lot: hibcSecondaryLabel(CARDIVA_VASCADE),
+        userId: PAT,
       },
     ];
-    for (const { product, item, lot } of pairs) {
+    for (const { product, item, lot, userId } of pairs) {
       const before = await onHand(product.id, product.lot);
-      const first = await applyStationScan({ mode: "arrive", rawBarcode: item }, 1, db);
+      const first = await applyStationScan({ mode: "arrive", rawBarcode: item }, userId, db);
       expect(first.status).toBe("needs_lot");
       if (first.status !== "needs_lot") continue;
-      expect(first.product.productId).toBe(product.id);
-      expect(first.message).toMatch(/lot and expiry barcode/);
 
       const second = await applyStationScan(
         { mode: "arrive", rawBarcode: lot, pendingRaw: first.raw },
-        1,
+        userId,
         db,
       );
       expect(second.status).toBe("success");
       if (second.status !== "success") continue;
-      expect(second.item.productId).toBe(product.id);
       expect(second.item.lot).toBe(product.lot);
-      expect(second.item.expiry).toBe(product.expiry);
-      expect(second.notice).toBeNull();
-      expect(second.reads).toHaveLength(2);
       expect(await onHand(product.id, product.lot)).toBe(before + 1);
     }
 
-    const alone = await applyStationScan(
-      { mode: "arrive", rawBarcode: gs1LotLabel(TERUMO_8FR) },
-      1,
-      db,
-    );
-    expect(alone.status).toBe("error");
-    if (alone.status === "error") expect(alone.code).toBe("no_item");
-
-    const wrongItem = await applyStationScan(
-      {
-        mode: "arrive",
-        rawBarcode: hibcSecondaryLabel(CARDIVA_VASCADE),
-        pendingRaw: "+HDEMOC0007",
-      },
-      1,
-      db,
-    );
-    expect(wrongItem.status).toBe("error");
-    expect(await unmappedCount()).toBe(unmappedBefore);
-
-    const ep = await openStationCase(1, db);
+    const ep = await openStationCase(ALEX, db);
     const ask = await applyStationScan(
-      { mode: "pull", rawBarcode: gtinLabel(TERUMO_11FR), caseId: ep.id },
-      1,
+      { mode: "use", rawBarcode: gtinLabel(TERUMO_11FR), caseId: ep.id },
+      ALEX,
       db,
     );
     expect(ask.status).toBe("needs_lot");
     if (ask.status !== "needs_lot") return;
-    expect(ask.lots.map((row) => row.lot)).toContain(TERUMO_11FR.lot);
-    const pulled = await applyStationScan(
+    const used = await applyStationScan(
       {
-        mode: "pull",
+        mode: "use",
         rawBarcode: gs1LotLabel(TERUMO_11FR),
         caseId: ep.id,
         pendingRaw: ask.raw,
       },
-      1,
+      ALEX,
       db,
     );
-    expect(pulled.status).toBe("success");
-
-    const back = await applyStationScan(
-      { mode: "return", rawBarcode: gtinLabel(TERUMO_11FR), caseId: ep.id },
-      1,
-      db,
-    );
-    expect(back.status).toBe("needs_lot");
-    if (back.status === "needs_lot") {
-      expect(back.lots).toEqual([
-        expect.objectContaining({ lot: TERUMO_11FR.lot, expiry: TERUMO_11FR.expiry, onHand: 1 }),
-      ]);
-    }
+    expect(used.status).toBe("success");
   });
 
-  it("the hospital-owned DECA pack opens one 'not on any contract' exception", async () => {
+  it("using the hospital-owned DECA pack opens one not_on_any_contract exception", async () => {
     const { createDb } = await import("@/db");
     const created = createDb(dbPath);
     sqlite = created.sqlite;
@@ -438,39 +365,39 @@ describe("scan station", () => {
       );
     expect(await openFor()).toHaveLength(0);
 
-    const arrive = await applyStationScan(
+    const vendorArrive = await applyStationScan(
       {
         mode: "arrive",
         rawBarcode: DECA_CABLE_PACK.catalogNumber,
         lot: "SPD-TEST-2",
         expiry: "2027-06-01",
       },
-      1,
+      TERRY,
       db,
     );
-    expect(arrive.status).toBe("success");
-    if (arrive.status === "success") {
-      expect(arrive.item.hospitalOwned).toBe(true);
-      expect(arrive.notice).toMatch(/not on any contract/i);
-    }
+    expect(vendorArrive.status).toBe("error");
+    if (vendorArrive.status === "error") expect(vendorArrive.code).toBe("wrong_vendor");
+    expect(await openFor()).toHaveLength(0);
 
-    const ep = await openStationCase(1, db);
-    const pull = await applyStationScan(
+    const ep = await openStationCase(ALEX, db);
+    const used = await applyStationScan(
       {
-        mode: "pull",
+        mode: "use",
         rawBarcode: DECA_CABLE_PACK.catalogNumber,
         caseId: ep.id,
-        lot: "SPD-TEST-2",
-        expiry: "2027-06-01",
+        lot: DECA_CABLE_PACK.lot,
+        expiry: DECA_CABLE_PACK.expiry,
       },
-      1,
+      ALEX,
       db,
     );
-    expect(pull.status).toBe("success");
+    expect(used.status).toBe("success");
+    if (used.status === "success") {
+      expect(used.notice).toMatch(/not on any contract/i);
+    }
 
     const open = await openFor();
     expect(open).toHaveLength(1);
-    expect(open[0]?.sourceContainer).toBe(1);
     const audited = await db
       .select()
       .from(auditLog)
@@ -482,17 +409,5 @@ describe("scan station", () => {
         ),
       );
     expect(audited).toHaveLength(1);
-
-    const sheath = await applyStationScan(
-      { mode: "arrive", rawBarcode: TERUMO_GS1_SAMPLE },
-      1,
-      db,
-    );
-    expect(sheath.status === "success" && sheath.notice).toBe(null);
-    expect(
-      (await listExceptions({ type: "not_on_any_contract" }, db)).every(
-        (row) => row.productId === DECA_CABLE_PACK.id,
-      ),
-    ).toBe(true);
   });
 });

@@ -81,8 +81,8 @@ export function CaseCloseoutPanel({
     <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
       <h2 className="text-lg font-medium">Close-out</h2>
       <p className="text-sm text-slate-600">
-        Return each item that comes back to the shelf. Anything not returned
-        counts as used when the case closes.
+        Return each item that comes back to the shelf. KU pays when the item is
+        scanned as used; a return nets that unit out of usage.
       </p>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
@@ -90,10 +90,10 @@ export function CaseCloseoutPanel({
             <tr className="border-b border-slate-300 text-slate-600">
               <th className="py-2 pr-3 font-medium">Product</th>
               <th className="py-2 pr-3 font-medium">Lot</th>
-              <th className="py-2 pr-3 font-medium">Pulled</th>
+              <th className="py-2 pr-3 font-medium">Used</th>
               <th className="py-2 pr-3 font-medium">Returned</th>
               <th className="py-2 pr-3 font-medium">
-                {open ? "Still out" : "Used (not returned)"}
+                {open ? "Not returned" : "Used (not returned)"}
               </th>
               <th className="py-2 font-medium">Action</th>
             </tr>
@@ -123,7 +123,7 @@ export function CaseCloseoutPanel({
             {lines.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-3 text-slate-500">
-                  No pulls yet.
+                  No uses yet.
                 </td>
               </tr>
             ) : null}

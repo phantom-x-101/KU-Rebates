@@ -48,15 +48,12 @@ describe("stockOnHand", () => {
       rows.map((r) => [`${r.productId}|${r.lot}`, r.onHand]),
     );
 
-    // Terumo RSS802 primary lot: arrived 3 - pulled 2 = 1
     expect(byKey["1|0001681425"]).toBe(1);
-    // Placeholder expiring-soon lot untouched: 1
-    expect(byKey["4|EXPIRINGSOON1"]).toBe(1);
-    // Cardiva: arrived 2 - pulled 1 = 1
     expect(byKey["2|G612C260420B"]).toBe(1);
-    // Ablation: arrived 2 - pulled 1 = 1
-    expect(byKey["3|VCABL1001"]).toBe(1);
-    // Mapping: arrived 3 - pulled 3 + returned 1 = 1 (extra pull is historical, not today)
-    expect(byKey["4|VCMAP2001"]).toBe(1);
+    expect(byKey["2|DEMO-SOON"]).toBe(1);
+    expect(byKey["3|0001476667"]).toBe(2);
+    expect(byKey["3|DEMO-EXPIRED"]).toBe(1);
+    expect(byKey["4|31982149L"]).toBe(1);
+    expect(byKey["5|SPD-PLACEHOLDER-1"]).toBe(1);
   });
 });

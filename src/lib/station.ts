@@ -7,6 +7,7 @@ import {
   productAccess,
   rooms,
   storageLocations,
+  users,
   vendors,
 } from "@/db/schema";
 import { identifyProduct, recordArrival } from "@/lib/arrival";
@@ -21,23 +22,35 @@ import { getCase, listCasePullLines, openCase } from "@/lib/cases";
 import { closeoutReturned } from "@/lib/closeout";
 import {
   productOnAnyContract,
+  recordRejectedArrival,
+  recordUnknownTag,
   recordUnmappedBarcode,
   resolveUnmappedBarcode,
 } from "@/lib/exceptions";
+import { COMMERCIAL_VENDOR_IDS } from "@/lib/real-products";
 import { recordPull } from "@/lib/pull";
 import { REAL_PRODUCTS } from "@/lib/real-products";
 import { reconcileCase, type CaseReconciliation } from "@/lib/reconcile";
+import { formatTag, looksLikeTag, normalizeTag } from "@/lib/tag";
+import { applyTagScan, findUnitByTag } from "@/lib/units";
 import { createProduct } from "@/lib/settings/products";
 import { upsertProductAccess } from "@/lib/settings/product-access";
 import { listPullableLots, stockOnHand, type PullableLot } from "@/lib/stock";
 import { listStockView, type StockViewRow } from "@/lib/stock-view";
 
-export type StationMode = "arrive" | "pull" | "return";
+export type StationMode = "arrive" | "use" | "return";
+
+export function stationModesForRole(role: string): StationMode[] {
+  if (role === "vendor_rep") return ["arrive"];
+  if (role === "tech") return ["use", "return"];
+  return [];
+}
 
 export type StationItem = {
   productId: number;
   catalogNumber: string;
   description: string;
+  vendorId?: number;
   vendorName: string;
   hospitalOwned: boolean;
   lot: string | null;
@@ -55,6 +68,7 @@ export type StationSuccess = {
   notice: string | null;
   /** What each barcode decoded to, for checking against the printed label. */
   reads: string[];
+  tagDisplay?: string;
 };
 
 export type StationNeedsLot = {
@@ -66,6 +80,7 @@ export type StationNeedsLot = {
     productId: number;
     catalogNumber: string;
     description: string;
+    vendorId?: number;
     vendorName: string;
     hospitalOwned: boolean;
   };
@@ -73,8 +88,8 @@ export type StationNeedsLot = {
   suggestedExpiry: string;
   reads: string[];
   /**
-   * Fallback when no lot label is scanned. Pull: lots on hand, earliest expiry
-   * first. Return: lots still out on this case.
+   * Fallback when no lot label is scanned. Use: lots on hand, earliest expiry
+   * first. Return: lots used on this case and not yet returned.
    */
   lots: PullableLot[];
 };
@@ -93,6 +108,11 @@ export type StationErrorCode =
   | "no_case"
   | "not_on_shelf"
   | "no_item"
+  | "wrong_vendor"
+  | "role"
+  | "unknown_tag"
+  | "tag_in_use"
+  | "expired_unit"
   | "other";
 
 export type StationError = {
@@ -111,9 +131,75 @@ export type StationOutcome =
 
 const HEADLINES: Record<StationMode, string> = {
   arrive: "Added to shelf",
-  pull: "Pulled for case",
+  use: "KU pays now",
   return: "Returned to shelf",
 };
+
+function tagStationOutcome(
+  result: Awaited<ReturnType<typeof applyTagScan>>,
+  raw: string,
+): StationOutcome {
+  const display = formatTag(normalizeTag(raw) ?? raw);
+  if (!result.ok) {
+    if (result.code === "unknown_tag") {
+      return {
+        ok: false,
+        status: "unknown",
+        message: result.message,
+        raw: display,
+      };
+    }
+    const code: StationErrorCode =
+      result.code === "expired"
+        ? "expired_unit"
+        : result.code === "no_case"
+          ? "no_case"
+          : result.code === "role"
+            ? "role"
+            : "other";
+    return {
+      ok: false,
+      status: "error",
+      code,
+      message: result.message,
+      item: result.unit
+        ? {
+            productId: result.unit.productId,
+            catalogNumber: result.unit.catalogNumber,
+            description: result.unit.description,
+            vendorId: result.unit.vendorId,
+            vendorName: result.unit.vendorName,
+            hospitalOwned: result.unit.hospitalOwned,
+            lot: result.unit.lot,
+            expiry: result.unit.expiry,
+            qty: 1,
+          }
+        : null,
+    };
+  }
+  const unit = result.unit;
+  const checkedOut = result.action === "checked_out";
+  return {
+    ok: true,
+    status: "success",
+    headline: checkedOut ? "Checked out" : "Returned",
+    mode: checkedOut ? "use" : "return",
+    item: {
+      productId: unit.productId,
+      catalogNumber: unit.catalogNumber,
+      description: unit.description,
+      vendorId: unit.vendorId,
+      vendorName: unit.vendorName,
+      hospitalOwned: unit.hospitalOwned,
+      lot: unit.lot,
+      expiry: unit.expiry,
+      qty: 1,
+    },
+    reads: [`tag ${unit.tagDisplay}`],
+    notice: checkedOut ? "KU pays now." : "Back on the shelf for the vendor.",
+    tagDisplay: unit.tagDisplay,
+  };
+}
 
 /** Prefill for typed lot entry, keyed by catalog number: the lot printed on each package. */
 const LOT_HINTS: Record<string, { lot: string; expiry: string }> = {
@@ -123,8 +209,6 @@ const LOT_HINTS: Record<string, { lot: string; expiry: string }> = {
       { lot: item.lot, expiry: item.expiry },
     ]),
   ),
-  "VC-ABL-01": { lot: "VCABL1001", expiry: "2027-06-01" },
-  "VC-MAP-01": { lot: "VCMAP2001", expiry: "2027-08-15" },
 };
 
 export function isPastExpiry(expiry: string, today: Date = new Date()) {
@@ -149,6 +233,7 @@ function itemFrom(
     productId: number;
     catalogNumber: string;
     description: string;
+    vendorId?: number;
     vendorName: string;
     hospitalOwned: boolean;
   },
@@ -160,6 +245,7 @@ function itemFrom(
     productId: product.productId,
     catalogNumber: product.catalogNumber,
     description: product.description,
+    vendorId: product.vendorId,
     vendorName: product.vendorName,
     hospitalOwned: product.hospitalOwned,
     lot,
@@ -257,6 +343,37 @@ export async function applyStationScan(
     };
   }
 
+  const [actor] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const allowed = actor ? stationModesForRole(actor.role) : [];
+  if (input.mode === "use" || input.mode === "return") {
+    const linked = await findUnitByTag(raw, db);
+    if (linked) {
+      return tagStationOutcome(
+        await applyTagScan({ tagRaw: raw, caseId: input.caseId ?? null }, userId, db),
+        raw,
+      );
+    }
+  }
+
+  if (actor && !allowed.includes(input.mode)) {
+    return {
+      ok: false,
+      status: "error",
+      code: "role",
+      message:
+        actor.role === "vendor_rep"
+          ? "Vendors can only check in their own products."
+          : actor.role === "tech"
+            ? "Techs can only check out or return items. Vendors check in stock."
+            : "This role cannot scan at the station.",
+      item: null,
+    };
+  }
+
   const scanned = parseBarcode(raw);
   if (isLotExpiryOnly(scanned)) {
     const pendingRaw = cleanRaw(input.pendingRaw ?? "");
@@ -299,13 +416,62 @@ export async function applyStationScan(
 
   const { parsed, product } = await identifyProduct(raw, db);
   if (!product) {
-    await recordUnmappedBarcode(raw, "station", userId, db);
+    if ((input.mode === "use" || input.mode === "return") && looksLikeTag(raw)) {
+      const tag = normalizeTag(raw) ?? raw;
+      await recordUnknownTag(tag, userId, db);
+      return {
+        ok: false,
+        status: "unknown",
+        message: `Unknown tag ${formatTag(tag)}. Nothing was checked out.`,
+        raw: formatTag(tag),
+      };
+    }
+    await recordUnmappedBarcode(
+      raw,
+      input.mode === "arrive" ? "arrival" : "station",
+      userId,
+      db,
+      actor?.vendorId,
+    );
     return {
       ok: false,
       status: "unknown",
-      message: "Unknown barcode",
+      message:
+        input.mode === "arrive"
+          ? "Unknown barcode. Nothing was added to the shelf."
+          : "Unknown barcode",
       raw,
     };
+  }
+
+  if (input.mode === "arrive" && actor?.role === "vendor_rep") {
+    const ownVendor = actor.vendorId;
+    if (
+      product.hospitalOwned ||
+      ownVendor == null ||
+      product.vendorId !== ownVendor
+    ) {
+      await recordRejectedArrival(
+        {
+          rawBarcode: raw,
+          actorVendorId: ownVendor ?? 0,
+          productId: product.productId,
+          reason: product.hospitalOwned ? "hospital_owned" : "wrong_vendor",
+          productVendorName: product.vendorName,
+        },
+        userId,
+        db,
+      );
+      return {
+        ok: false,
+        status: "error",
+        code: "wrong_vendor",
+        message: product.hospitalOwned
+          ? `${product.description} is hospital-owned and already on the shelf. Vendors cannot check it in.`
+          : `${product.description} belongs to ${product.vendorName}. You can only check in your own products.`,
+        item: itemFrom(product, parsed.lot, parsed.expiry),
+      };
+    }
   }
 
   const lot = (input.lot?.trim() || parsed.lot || "").trim();
@@ -315,17 +481,18 @@ export async function applyStationScan(
       productId: product.productId,
       catalogNumber: product.catalogNumber,
       description: product.description,
+      vendorId: product.vendorId,
       vendorName: product.vendorName,
       hospitalOwned: product.hospitalOwned,
     };
-    if (input.mode === "pull") {
+    if (input.mode === "use") {
       const lots = await listPullableLots(product.productId, new Date(), db);
       if (lots.length === 0) {
         return {
           ok: false,
           status: "error",
           code: "not_on_shelf",
-          message: "Nothing on the shelf for this product. Arrive it first.",
+          message: "Nothing on the shelf for this product. Ask the vendor to check it in.",
           item: itemFrom(productInfo, null, null),
         };
       }
@@ -367,6 +534,13 @@ export async function applyStationScan(
           })),
         };
       }
+      return {
+        ok: false,
+        status: "error",
+        code: "not_pulled",
+        message: "Item not used for this case",
+        item: itemFrom(productInfo, null, null),
+      };
     }
     const hint = lotHint(raw, parsed, product.catalogNumber);
     return {
@@ -447,7 +621,7 @@ export async function applyStationScan(
         userId,
         db,
       );
-    } else if (input.mode === "pull") {
+    } else if (input.mode === "use") {
       const onHand = await stockOnHand({ productId: product.productId }, db);
       const shelf = onHand.find(
         (row) =>
@@ -469,7 +643,7 @@ export async function applyStationScan(
             ok: false,
             status: "error",
             code: "duplicate",
-            message: "Duplicate — this lot is already pulled and the shelf is empty",
+            message: "Duplicate — this lot is already used and the shelf is empty",
             item: knownItem,
           };
         }
@@ -477,7 +651,7 @@ export async function applyStationScan(
           ok: false,
           status: "error",
           code: "not_on_shelf",
-          message: "Nothing on the shelf for this lot. Arrive it first.",
+          message: "Nothing on the shelf for this lot. Ask the vendor to check it in.",
           item: knownItem,
         };
       }
@@ -520,7 +694,7 @@ export async function applyStationScan(
           code: closed ? "duplicate" : "not_pulled",
           message: closed
             ? "Duplicate — this item is already closed out for this case"
-            : "Item not pulled for this case",
+            : "Item not used for this case",
           item: knownItem,
         };
       }
@@ -542,7 +716,7 @@ export async function applyStationScan(
         ok: false,
         status: "error",
         code: "not_pulled",
-        message: "Item not pulled for this case",
+        message: "Item not used for this case",
         item: knownItem,
       };
     }
@@ -573,7 +747,7 @@ export async function applyStationScan(
     item: knownItem,
     reads: [describeScan(parsed)],
     notice:
-      onContract || input.mode === "return"
+      onContract || input.mode !== "use"
         ? null
         : "Not on any contract. Listed in Exceptions for review.",
   };
@@ -652,7 +826,11 @@ export async function loadStationBoard(
 ) {
   const [stock, vendorRows, caseRow] = await Promise.all([
     listStockView({}, new Date(), db),
-    db.select({ id: vendors.id, name: vendors.name }).from(vendors).orderBy(vendors.name),
+    db.select({ id: vendors.id, name: vendors.name }).from(vendors).orderBy(vendors.name).then((rows) =>
+      rows.filter((row) =>
+        (COMMERCIAL_VENDOR_IDS as readonly number[]).includes(row.id),
+      ),
+    ),
     caseId ? getCase(caseId, db) : Promise.resolve(null),
   ]);
 

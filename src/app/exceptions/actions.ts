@@ -16,6 +16,14 @@ async function requireQueueUser() {
   return user!;
 }
 
+async function requireWritableQueueUser() {
+  const user = await requireQueueUser();
+  if (user.role === "vendor_rep") {
+    throw new Error("Vendors can view their queue but cannot assign or resolve it");
+  }
+  return user;
+}
+
 function str(formData: FormData, key: string) {
   const v = formData.get(key);
   return typeof v === "string" ? v : "";
@@ -26,7 +34,7 @@ export async function assignOwnerAction(
   formData: FormData,
 ): Promise<ExceptionActionState> {
   try {
-    const user = await requireQueueUser();
+    const user = await requireWritableQueueUser();
     const row = await assignExceptionOwner(
       {
         exceptionId: str(formData, "exceptionId"),
@@ -53,7 +61,7 @@ export async function resolveExceptionAction(
   formData: FormData,
 ): Promise<ExceptionActionState> {
   try {
-    const user = await requireQueueUser();
+    const user = await requireWritableQueueUser();
     const row = await resolveException(
       {
         exceptionId: str(formData, "exceptionId"),

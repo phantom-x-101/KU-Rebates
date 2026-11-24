@@ -7,57 +7,40 @@ import { canManageSettings } from "@/lib/settings";
 import type { User } from "@/db/schema";
 
 function navLinks(currentUser: User | null): NavLink[] {
-  if (currentUser?.role === "supply_chain") {
-    return [
-      { href: "/dashboard", label: "Dashboard" },
-      { href: "/cases", label: "Cases" },
-      { href: "/reorder", label: "Reorder" },
-      { href: "/exceptions", label: "Exceptions" },
-      { href: "/settings", label: "Settings" },
-    ];
-  }
-  if (currentUser?.role === "category_owner") {
-    return [
-      { href: "/stock", label: "Stock" },
-      { href: "/rebates", label: "Rebates" },
-      { href: "/contracts", label: "Contracts" },
-      { href: "/exceptions", label: "Exceptions" },
-    ];
-  }
   if (currentUser?.role === "vendor_rep") {
     return [
-      { href: "/vendor", label: "Vendor portal" },
-      { href: "/vendor/stock", label: "Vendor stock" },
-      { href: "/reorder", label: "Reorder" },
+      { href: "/vendor", label: "Dashboard" },
+      { href: "/vendor/check-in", label: "Check in" },
+      { href: "/vendor/stock", label: "Inventory" },
+      { href: "/vendor/returns", label: "Returns" },
+      { href: "/exceptions", label: "Exceptions" },
     ];
   }
-
-  const links: NavLink[] = [
-    { href: "/demo", label: "Simulate Flow" },
-    { href: "/station", label: "Scan station" },
-  ];
-  if (currentUser && ["admin"].includes(currentUser.role)) {
-    links.push({ href: "/dashboard", label: "Dashboard" });
-  }
-  if (currentUser) {
-    links.push({ href: "/stock", label: "Stock" });
-  }
-  if (currentUser && ["tech", "admin"].includes(currentUser.role)) {
-    links.push(
+  if (currentUser?.role === "tech") {
+    return [
+      { href: "/station", label: "Check out" },
       { href: "/cases", label: "Cases" },
-      { href: "/scan/arrival", label: "Scan arrival" },
-    );
+    ];
   }
-  if (canManageSettings(currentUser)) {
-    links.push(
-      { href: "/reorder", label: "Reorder" },
+  if (
+    currentUser?.role === "supply_chain" ||
+    currentUser?.role === "category_owner" ||
+    currentUser?.role === "admin"
+  ) {
+    const links: NavLink[] = [
+      { href: "/dashboard", label: "Dashboard" },
+      { href: "/stock", label: "Inventory" },
+      { href: "/usage", label: "Usage" },
+      { href: "/returns", label: "Returns" },
       { href: "/exceptions", label: "Exceptions" },
-      { href: "/rebates", label: "Rebates" },
-      { href: "/contracts", label: "Contracts" },
-      { href: "/settings", label: "Settings" },
-    );
+    ];
+    if (canManageSettings(currentUser)) {
+      links.push({ href: "/settings", label: "Settings" });
+    }
+    return links;
   }
-  return links;
+
+  return [{ href: "/station", label: "Check out" }];
 }
 
 export function AppFrame({
@@ -96,7 +79,7 @@ export function AppFrame({
                 type="submit"
                 className="rounded-lg bg-pc-teal px-3 py-2 text-sm font-semibold text-white"
               >
-                Reset demo
+                Reset Data
               </button>
             </form>
           ) : null}
@@ -117,8 +100,9 @@ export function AppFrame({
             {children}
           </main>
           <footer className="px-6 pb-6 text-xs text-slate-500">
-            Demo data. Vendor C through Vendor G, prices, and quantities are
-            placeholders. PyCube shows suggestions only and does not place orders.
+            Demo data. Lots DEMO-EXPIRED and DEMO-SOON, tag IDs E200-0000-0001
+            and up, par levels, quantities and dates are placeholders. PyCube
+            shows information only and does not place orders.
           </footer>
           </div>
         </div>

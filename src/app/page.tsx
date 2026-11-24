@@ -47,12 +47,9 @@ export default async function HomePage() {
           Consignment
         </h1>
         <p className="mt-1 max-w-2xl text-slate-600">
-          Start at the{" "}
-          <Link href="/station" className="font-semibold underline">
-            scan station
-          </Link>
-          : arrive, pull, or return, then check the case. Vendor C and the
-          invented quantities are placeholders.
+          Vendors check in their own products. Alex checks them out for a case
+          (KU pays now) or returns them to the shelf. Invented lots, quantities
+          and dates are demo data.
         </p>
         {user ? (
           <p className="mt-3 text-sm text-slate-700">
@@ -88,7 +85,8 @@ export default async function HomePage() {
         ) : (
           <p className="mt-3 text-sm text-amber-800">
             No user selected. Choose a user above — start with{" "}
-            <strong>Sam</strong> for the supply-chain demo.
+            <strong>Terry Terumo</strong> to check in, or{" "}
+            <strong>Alex</strong> to check out.
           </p>
         )}
       </section>

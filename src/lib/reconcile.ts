@@ -29,7 +29,7 @@ export type CaseReconciliation = {
 
 /**
  * The check: taken = returned + used.
- * Anything taken and not returned counts as used, so there is no gap.
+ * Used is what KU paid for (use scan minus later return).
  */
 export function summarizeFromCounts(input: {
   taken: number;

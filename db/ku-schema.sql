@@ -48,7 +48,8 @@ CREATE TABLE app_settings (                            -- integration switches a
   value TEXT NOT NULL
 );
 -- Suggested seeds: epic_integration='off', workday_integration='off',
---                  default_count_basis='used', default_forecast_method='run_rate'
+--                  default_count_basis='used', default_forecast_method='run_rate',
+--                  datawedge_soft_trigger='off', scan_debug='off'
 
 -- =====================================================================
 -- CATALOG (used by containers 1, 2, 3)
@@ -270,8 +271,9 @@ CREATE TABLE exceptions (
   id               INTEGER PRIMARY KEY,
   source_container INTEGER NOT NULL CHECK (source_container IN (1,2,3)),
   type             TEXT NOT NULL CHECK (type IN (
-                     'case_open_past_timeout','expired_on_shelf','bill_only_unmapped',
-                     'not_on_any_contract','missing_from_item_master')),
+                     'case_open_past_timeout','expired_on_shelf','expiring_soon','low_stock',
+                     'bill_only_unmapped','rejected_arrival','not_on_any_contract',
+                     'missing_from_item_master','unknown_tag','expired_unit')),
   scan_id          INTEGER REFERENCES scans(id),
   product_id       INTEGER REFERENCES products(id),
   contract_line_id INTEGER REFERENCES contract_lines(id),
@@ -327,6 +329,24 @@ CREATE TABLE stock_events (
   by_user_id  INTEGER REFERENCES users(id)
 );
 CREATE INDEX idx_stock_product ON stock_events(product_id, event_type);
+
+-- Tagged units. Check-in/out also writes stock_events so usage stays consistent.
+-- Invented tag IDs (E200-0000-0001 and up) are demo data.
+CREATE TABLE units (
+  id             INTEGER PRIMARY KEY,
+  tag_epc        TEXT NOT NULL UNIQUE,
+  product_id     INTEGER NOT NULL REFERENCES products(id),
+  vendor_id      INTEGER NOT NULL REFERENCES vendors(id),
+  lot            TEXT NOT NULL,
+  expiry         TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK (status IN ('in_stock','checked_out','expired')),
+  checked_in_at  TEXT NOT NULL,
+  checked_in_by  INTEGER REFERENCES users(id),
+  case_id        INTEGER REFERENCES cases(id),
+  checked_out_at TEXT
+);
+CREATE INDEX idx_units_vendor_status ON units(vendor_id, status);
+CREATE INDEX idx_units_product ON units(product_id);
 
 CREATE TABLE expiry_rules (
   id             INTEGER PRIMARY KEY,

@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import type { AppDb } from "@/db";
 import { stockEvents } from "@/db/schema";
+import { taggedOnHand, unitKey } from "@/lib/units";
 
 export type StockOnHandRow = {
   productId: number;
@@ -12,8 +13,9 @@ export type StockOnHandRow = {
 };
 
 /**
- * Stock on hand is DERIVED from stock_events, never stored:
- * on_hand = arrived + returned - pulled - expired
+ * Stock on hand is DERIVED from stock_events:
+ * on_hand = arrived + returned - pulled - expired.
+ * For lots that have tagged units, on hand = units in_stock instead.
  */
 export async function stockOnHand(
   filters: {
@@ -59,7 +61,49 @@ export async function stockOnHand(
       stockEvents.expiry,
     );
 
-  return rows.filter((r) => r.onHand !== 0);
+  const tagged = await taggedOnHand(db);
+  if (tagged.length === 0) {
+    return rows.filter((r) => r.onHand !== 0);
+  }
+
+  const taggedByKey = new Map(
+    tagged.map((row) => [unitKey(row.productId, row.lot, row.expiry), row]),
+  );
+  const merged: StockOnHandRow[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = unitKey(row.productId, row.lot, row.expiry);
+    const overlay = taggedByKey.get(key);
+    if (!overlay) {
+      merged.push(row);
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({
+      productId: row.productId,
+      locationId: row.locationId,
+      lot: overlay.lot,
+      expiry: overlay.expiry,
+      onHand: overlay.onHand,
+    });
+  }
+  for (const overlay of tagged) {
+    const key = unitKey(overlay.productId, overlay.lot, overlay.expiry);
+    if (seen.has(key)) continue;
+    if (filters.productId !== undefined && overlay.productId !== filters.productId) {
+      continue;
+    }
+    merged.push({
+      productId: overlay.productId,
+      locationId: filters.locationId ?? null,
+      lot: overlay.lot,
+      expiry: overlay.expiry,
+      onHand: overlay.onHand,
+    });
+  }
+
+  return merged.filter((r) => r.onHand !== 0);
 }
 
 export type PullableLot = {

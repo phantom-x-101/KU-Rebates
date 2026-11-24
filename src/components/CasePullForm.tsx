@@ -151,11 +151,11 @@ export function CasePullForm({
           type="button"
           className="rounded border border-slate-300 px-2 py-1"
           onClick={() => {
-            setRaw("VC-ABL-01");
-            lookup("VC-ABL-01");
+            setRaw("RSS106");
+            lookup("RSS106");
           }}
         >
-          Vendor C ablation catalog
+          Terumo 11 Fr catalog
         </button>
       </div>
       <div className="flex flex-wrap gap-2">
